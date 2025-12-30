@@ -113,7 +113,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Bot is Running! (Face Detect & Profit Mode Active)"
+    return "🤖 Bot is Running! (Smart Unlock System Active)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -127,7 +127,7 @@ def keep_alive_pinger():
             time.sleep(600)
 
 # ============================================================================
-# 🔥 AUTOMATIC RESOURCE DOWNLOADER (Updated Logic)
+# 🔥 AUTOMATIC RESOURCE DOWNLOADER
 # ============================================================================
 def setup_resources():
     font_name = "kalpurush.ttf"
@@ -311,13 +311,13 @@ def apply_badge_to_poster(poster_bytes, text):
         return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# ---- HTML GENERATOR (UPDATED WITH RULES & PROCESSING DELAY) ----
+# 🔥 SMART UNLOCK HTML GENERATOR (HIGH CPM VERSION)
 # ============================================================================
 def generate_html_code(data, links, ad_links_list):
     title = data.get("title") or data.get("name")
     overview = data.get("overview", "")
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
-    BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"   
+    BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
 
     style_html = """
     <style>
@@ -336,19 +336,6 @@ def generate_html_code(data, links, ad_links_list):
         h2 { color: #00d2ff; margin: 10px 0; font-size: 26px; font-weight: 700; }
         p { text-align: left; color: #ccc; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
         
-        /* RULES BOX STYLE */
-        .rules-box {
-            background: rgba(255, 235, 59, 0.1); border: 2px dashed #ffeb3b;
-            padding: 15px; border-radius: 10px; margin: 20px 0; text-align: left;
-        }
-        .rules-title {
-            color: #ffeb3b; font-weight: bold; font-size: 20px; 
-            margin-bottom: 8px; text-transform: uppercase;
-        }
-        .rules-text {
-            color: #ffffff; font-size: 15px; line-height: 1.5;
-        }
-
         .dl-container-area { margin-top: 30px; }
         .dl-item { border-bottom: 2px dashed #444; padding-bottom: 20px; margin-bottom: 20px; }
         .dl-link-label {
@@ -359,26 +346,39 @@ def generate_html_code(data, links, ad_links_list):
             position: relative; width: 90%; padding: 18px; font-size: 20px; font-weight: bold;
             color: white; text-transform: uppercase; border: none; border-radius: 50px;
             cursor: pointer; outline: none;
+            /* Default RGB Animation */
             background: linear-gradient(90deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
             background-size: 400%; animation: glowing 20s linear infinite;
-            box-shadow: 0 0 15px rgba(0,0,0,0.5); transition: transform 0.2s;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5); transition: all 0.3s;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
         }
         .rgb-btn:active { transform: scale(0.95); }
-        .rgb-btn:disabled { opacity: 0.7; cursor: wait; }
+        
+        /* State Styles */
+        .btn-loading {
+            background: #555 !important; 
+            cursor: wait !important;
+            animation: none !important;
+            box-shadow: none !important;
+        }
+        .btn-ready {
+            background: #00e676 !important; /* Green Color */
+            color: #000 !important;
+            box-shadow: 0 0 20px #00e676 !important;
+            animation: pulse 1.5s infinite !important;
+        }
 
         @keyframes glowing {
             0% { background-position: 0 0; }
             50% { background-position: 400% 0; }
             100% { background-position: 0 0; }
         }
-        .dl-timer-display { display: none; background: #ff0055; color: #fff; padding: 10px; border-radius: 8px; margin-top: 15px; font-weight: bold; }
-        .dl-real-download-link {
-            display: none !important; background: #00e676; color: #000 !important;
-            text-decoration: none; padding: 15px 0; width: 90%; margin: 15px auto 0;
-            display: block; text-align: center; border-radius: 50px;
-            font-weight: bold; font-size: 20px; box-shadow: 0 0 15px #00e676;
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
         }
+
         .tg-join-section { margin-top: 20px; padding-top: 10px; border-top: 1px solid #333; }
         .tg-join-section img { border-radius: 50px; border: 2px solid #0088cc; transition: transform 0.3s; }
         .tg-join-section img:hover { transform: scale(1.05); }
@@ -392,9 +392,7 @@ def generate_html_code(data, links, ad_links_list):
         links_html += f"""
         <div class="dl-item">
             <span class="dl-link-label">📂 {label}</span>
-            <button class="rgb-btn dl-trigger-btn" data-url="{link['url']}" data-click-count="0">{btn_text}</button>
-            <div class="dl-timer-display">⏳ Wait: <span class="timer-count">10</span>s</div>
-            <a href="#" class="dl-real-download-link" target="_blank">✅ CLICK TO OPEN</a>
+            <button class="rgb-btn dl-trigger-btn" data-url="{link['url']}" data-status="init">{btn_text}</button>
         </div>"""
 
     # 🔥 OWNER LINK INJECTION 🔥
@@ -402,51 +400,50 @@ def generate_html_code(data, links, ad_links_list):
     if OWNER_AD_LINKS:
         final_ad_list.insert(0, random.choice(OWNER_AD_LINKS))
 
-    # --- UPDATED JAVASCRIPT WITH PROCESSING DELAY ---
+    # --- SMART UNLOCK JAVASCRIPT ---
     script_html = f"""
     <script>
     const AD_LINKS = {json.dumps(final_ad_list)}; 
+    
     document.querySelectorAll('.dl-trigger-btn').forEach(btn => {{
         btn.onclick = function() {{
-            // 1. Show Processing
-            let originalText = this.innerText;
-            this.innerText = "🔄 Processing...";
-            this.disabled = true; // Disable click
+            const status = this.getAttribute('data-status');
+            const realLink = this.getAttribute('data-url');
 
-            // 2. Wait 1.5 Seconds
-            setTimeout(() => {{
-                // Restore button
-                this.innerText = originalText;
-                this.disabled = false;
-
-                // 3. Main Logic
-                let count = parseInt(this.getAttribute('data-click-count'));
-                if(count < AD_LINKS.length) {{
-                    // Open Ad
-                    window.open(AD_LINKS[count], '_blank');
-                    this.setAttribute('data-click-count', count + 1);
-                }} 
-                else {{
-                    // Show Real Link Logic
-                    this.style.display = 'none'; 
-                    let timerDiv = this.nextElementSibling;
-                    let realLink = timerDiv.nextElementSibling;
-                    let timerSpan = timerDiv.querySelector('.timer-count');
-                    timerDiv.style.display = 'block';
-                    let timeLeft = 3;
-                    timerSpan.innerText = timeLeft;
-                    let interval = setInterval(() => {{
-                        timeLeft--;
-                        timerSpan.innerText = timeLeft;
-                        if(timeLeft <= 0) {{
-                            clearInterval(interval);
-                            timerDiv.style.display = 'none';
-                            realLink.href = this.getAttribute('data-url');
-                            realLink.style.setProperty('display', 'block', 'important'); 
-                        }}
-                    }}, 1000);
+            // CASE 1: First Click (Open Ad + Start Timer)
+            if (status === 'init') {{
+                // 1. Open Ad
+                if(AD_LINKS.length > 0) {{
+                    const randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
+                    window.open(randomAd, '_blank');
                 }}
-            }}, 1500); // 1.5s Delay
+
+                // 2. Change Button to "Loading"
+                const originalText = this.innerText;
+                this.innerText = "🔄 UNLOCKING LINK...";
+                this.classList.add('btn-loading');
+                this.setAttribute('data-status', 'waiting');
+                
+                // 3. Wait 4 Seconds (Fake Verification)
+                let timeLeft = 4;
+                const timer = setInterval(() => {{
+                    timeLeft--;
+                    if (timeLeft <= 0) {{
+                        clearInterval(timer);
+                        // 4. Make Button Ready
+                        this.classList.remove('btn-loading');
+                        this.classList.add('btn-ready');
+                        this.innerText = "✅ CLICK TO OPEN";
+                        this.setAttribute('data-status', 'ready');
+                    }} else {{
+                        this.innerText = "🔄 WAIT " + timeLeft + "s...";
+                    }}
+                }}, 1000);
+            }} 
+            // CASE 2: Second Click (Already Verified)
+            else if (status === 'ready') {{
+                window.location.href = realLink;
+            }}
         }}
     }});
     </script>
@@ -460,18 +457,13 @@ def generate_html_code(data, links, ad_links_list):
         <h2>{title}</h2>
         <p>{overview}</p>
         
-        <!-- RULES BOX ADDED HERE -->
-        <div class="rules-box">
-            <div class="rules-title">⚠️ ডাউনলোড করার নিয়ম:</div>
-            <div class="rules-text">
-                ১. প্রথমে <b>Download Button</b> এ ক্লিক করুন।<br>
-                ২. ক্লিক করার পর <b>Processing</b> দেখাবে এবং একটি অ্যাড ওপেন হতে পারে।<br>
-                ৩. দয়া করে <b>Back</b> করে আবার বাটনে ক্লিক করুন।<br>
-                ৪. ২-৩ বার এমন হওয়ার পর <b>Original Link</b> পেয়ে যাবেন।
-            </div>
+        <!-- Small Hint for User -->
+        <div style="background: rgba(0, 255, 255, 0.1); padding: 10px; border-radius: 8px; font-size: 13px; color: #00e676; margin-bottom: 20px;">
+            ℹ️ <b>Note:</b> Click 'Download' & wait 4 seconds to unlock the server.
         </div>
 
         <div class="dl-container-area">{links_html}</div>
+        
         <div class="tg-join-section">
             <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank">
                 <img src="{BTN_TELEGRAM}" style="width: 250px; max-width: 90%;">
@@ -582,7 +574,7 @@ except Exception as e:
 async def start_cmd(client, message):
     user_conversations.pop(message.from_user.id, None)
     await message.reply_text(
-        "🎬 **Movie & Series Bot (RGB, Dark & Profit v10)**\n\n"
+        "🎬 **Movie & Series Bot (Smart Unlock & Profit v12)**\n\n"
         "⚡ `/post <Link or Name>` - Auto Post\n"
         "✍️ `/manual` - Custom Manual Post\n"
         "🛠 `/mysettings` - View Your Ad Links\n"
@@ -832,5 +824,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Bot Started (Smart Face Detect & Profit v11)!")
+    print("🚀 Bot Started (Smart Unlock & Profit v12)!")
     bot.run()
