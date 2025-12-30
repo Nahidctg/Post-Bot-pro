@@ -311,7 +311,7 @@ def apply_badge_to_poster(poster_bytes, text):
         return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 SMART UNLOCK HTML GENERATOR (FIXED GARBAGE TEXT)
+# 🔥 SMART UNLOCK HTML GENERATOR (FIXED EMOJI ISSUE)
 # ============================================================================
 def generate_html_code(data, links, ad_links_list):
     title = data.get("title") or data.get("name")
@@ -319,7 +319,7 @@ def generate_html_code(data, links, ad_links_list):
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
     BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
 
-    # --- 1. CSS STYLE (Standard String) ---
+    # --- 1. CSS STYLE ---
     style_html = """
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
@@ -387,14 +387,14 @@ def generate_html_code(data, links, ad_links_list):
             <button class="rgb-btn dl-trigger-btn" data-url="{link['url']}" data-status="init">{btn_text}</button>
         </div>"""
 
-    # --- 3. PREPARE AD LINKS LIST ---
+    # --- 3. AD LINKS LOGIC ---
     final_ad_list = list(ad_links_list)
     if OWNER_AD_LINKS:
         final_ad_list.insert(0, random.choice(OWNER_AD_LINKS))
     
     ad_links_json = json.dumps(final_ad_list)
 
-    # --- 4. JAVASCRIPT (Using Replacement to avoid f-string errors) ---
+    # --- 4. JAVASCRIPT (Fixed innerText Issue) ---
     script_raw = """
     <script>
     const AD_LINKS = __AD_LINKS_PLACEHOLDER__; 
@@ -406,18 +406,15 @@ def generate_html_code(data, links, ad_links_list):
 
             // CASE 1: First Click
             if (status === 'init') {
-                // Open Random Ad
                 if(AD_LINKS.length > 0) {
                     const randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
                     window.open(randomAd, '_blank');
                 }
 
-                // Change Button
                 this.innerText = "🔄 UNLOCKING LINK...";
                 this.classList.add('btn-loading');
                 this.setAttribute('data-status', 'waiting');
                 
-                // Timer
                 let timeLeft = 4;
                 const timer = setInterval(() => {
                     timeLeft--;
@@ -425,7 +422,10 @@ def generate_html_code(data, links, ad_links_list):
                         clearInterval(timer);
                         this.classList.remove('btn-loading');
                         this.classList.add('btn-ready');
-                        this.innerText = "✅ CLICK TO OPEN";
+                        
+                        // 🔥 FIX: Using Direct Emoji instead of Code
+                        this.innerText = "✅ CLICK TO OPEN"; 
+                        
                         this.setAttribute('data-status', 'ready');
                     } else {
                         this.innerText = "🔄 WAIT " + timeLeft + "s...";
@@ -441,12 +441,11 @@ def generate_html_code(data, links, ad_links_list):
     </script>
     """
     
-    # Safe Replacement
     script_html = script_raw.replace("__AD_LINKS_PLACEHOLDER__", ad_links_json)
 
     # --- 5. COMBINE ALL ---
     return f"""
-    <!-- Bot Generated Post (Smart Unlock) -->
+    <!-- Bot Generated Post (Fixed Emoji) -->
     {style_html}
     <div class="main-card">
         <img src="{poster}" class="poster-img">
@@ -467,7 +466,6 @@ def generate_html_code(data, links, ad_links_list):
     </div>
     {script_html}
     """
-
 # ---- IMAGE & CAPTION GENERATOR ----
 def generate_formatted_caption(data):
     title = data.get("title") or data.get("name") or "N/A"
