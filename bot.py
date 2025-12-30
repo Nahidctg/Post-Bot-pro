@@ -167,28 +167,43 @@ def get_font(size=60, bold=False):
         logger.error(f"Font Load Error: {e}")
         return ImageFont.load_default()
 
-# ---- HELPER: UPLOAD TO CATBOX (WITH FALLBACK) ----
+# ---- HELPER: UPLOAD TO CATBOX & TELEGRAPH (Dual Server) ----
 def upload_to_catbox_bytes(img_bytes):
-    # ১. প্রথমে Catbox এ চেষ্টা করবে
+    # ১. প্রথমে Catbox এ চেষ্টা করবে (Primary)
     try:
         url = "https://catbox.moe/user/api.php"
         data = {"reqtype": "fileupload", "userhash": ""}
-        files = {"fileToUpload": ("poster.png", img_bytes, "image/png")}
-        # কিছু হেডার্স যোগ করা হলো যাতে ব্লক না করে
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        # BytesIO বা raw bytes নিশ্চিত করা
+        if hasattr(img_bytes, 'read'):
+            img_bytes.seek(0)
+            file_data = img_bytes.read()
+        else:
+            file_data = img_bytes
+
+        files = {"fileToUpload": ("poster.png", file_data, "image/png")}
+        headers = {"User-Agent": "Mozilla/5.0"}
         
-        response = requests.post(url, data=data, files=files, headers=headers, timeout=10)
+        response = requests.post(url, data=data, files=files, headers=headers, timeout=5)
         if response.status_code == 200:
             return response.text.strip()
     except Exception as e:
         logger.error(f"Catbox Upload Failed: {e}")
 
-    # ২. Catbox কাজ না করলে Graph.org (Telegraph) এ আপলোড করবে
+    # ২. Catbox কাজ না করলে Graph.org (Telegraph) এ আপলোড করবে (Backup)
     try:
-        logger.info("⚠️ Catbox blocked! Trying Graph.org fallback...")
+        logger.info("⚠️ Switching to Graph.org upload...")
         url = "https://graph.org/upload"
-        files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
-        response = requests.post(url, files=files, timeout=10)
+        
+        # ফাইল ডেটা রিসেট (যদি আগে রিড হয়ে থাকে)
+        if hasattr(img_bytes, 'read'):
+            img_bytes.seek(0)
+            file_data = img_bytes.read()
+        else:
+            file_data = img_bytes
+            
+        files = {'file': ('image.jpg', file_data, 'image/jpeg')}
+        response = requests.post(url, files=files, timeout=5)
+        
         if response.status_code == 200:
             json_data = response.json()
             return "https://graph.org" + json_data[0]["src"]
@@ -196,6 +211,17 @@ def upload_to_catbox_bytes(img_bytes):
         logger.error(f"Graph.org Upload Failed: {e}")
 
     return None
+
+def upload_to_catbox(file_path):
+    try:
+        with open(file_path, "rb") as f:
+            # ফাইল রিড করে বাইট হিসেবে পাঠানো হচ্ছে
+            file_data = f.read()
+            return upload_to_catbox_bytes(io.BytesIO(file_data))
+    except Exception as e:
+        logger.error(f"File Read Error: {e}")
+        return None
+
 # ---- TMDB & LINK EXTRACTION ----
 def extract_tmdb_id(text):
     tmdb_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', text)
