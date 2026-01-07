@@ -117,7 +117,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Bot is Running! (Optimized & User Friendly)"
+    return "🤖 Bot is Running! (Fixed Icons & Speed Optimized)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -176,21 +176,18 @@ def upload_image_core(file_content):
     """
     # 1. Try 0x0.st (Fastest)
     try:
-        # logger.info("📡 Trying 0x0.st...")
         url = "https://0x0.st"
         files = {'file': ('image.jpg', file_content)}
-        # Timeout reduced to 5s for speed
+        # Timeout reduced to 5s for speed, verify=False for ISP bypass
         response = requests.post(url, files=files, timeout=5, verify=False)
         if response.status_code == 200:
             link = response.text.strip()
-            # logger.info(f"✅ Uploaded to 0x0.st: {link}")
             return link
     except Exception as e:
-        pass # Silently fail to try next
+        pass 
 
     # 2. Try Catbox.moe (Reliable)
     try:
-        # logger.info("📡 Trying Catbox.moe...")
         url = "https://catbox.moe/user/api.php"
         data = {"reqtype": "fileupload", "userhash": ""}
         files = {"fileToUpload": ("image.png", file_content, "image/png")}
@@ -199,22 +196,19 @@ def upload_image_core(file_content):
         response = requests.post(url, data=data, files=files, headers=headers, timeout=6, verify=False)
         if response.status_code == 200:
             link = response.text.strip()
-            # logger.info(f"✅ Uploaded to Catbox: {link}")
             return link
     except Exception as e:
         pass
 
     # 3. Try Graph.org (Telegraph) - Backup
     try:
-        # logger.info("📡 Trying Graph.org...")
         url = "https://graph.org/upload"
         files = {'file': ('image.jpg', file_content, 'image/jpeg')}
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.post(url, files=files, headers=headers, timeout=5, verify=False)
         if response.status_code == 200:
             json_data = response.json()
             link = "https://graph.org" + json_data[0]["src"]
-            # logger.info(f"✅ Uploaded to Graph.org: {link}")
             return link
     except Exception as e:
         pass
@@ -368,7 +362,7 @@ def apply_badge_to_poster(poster_bytes, text):
         return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 OPTIMIZED HTML GENERATOR (User Friendly & Fast)
+# 🔥 OPTIMIZED HTML GENERATOR (Fixed Icons Issue)
 # ============================================================================
 def generate_html_code(data, links, ad_links_list):
     title = data.get("title") or data.get("name")
@@ -409,6 +403,7 @@ def generate_html_code(data, links, ad_links_list):
             background: linear-gradient(45deg, #FF512F, #DD2476);
             box-shadow: 0 4px 10px rgba(221, 36, 118, 0.4);
             transition: all 0.3s ease; text-decoration: none; display: inline-block;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
         }
         .rgb-btn:active { transform: scale(0.98); }
         .rgb-btn.processing { background: #555; cursor: wait; box-shadow: none; }
@@ -429,28 +424,26 @@ def generate_html_code(data, links, ad_links_list):
             <span class="dl-link-label">📂 {link['label']}</span>
             <!-- Unique ID for each button area -->
             <div id="area-{idx}">
-                <button class="rgb-btn" data-clicks="0" onclick="processLink(this, '{link['url']}', 'area-{idx}')">⬇️ DOWNLOAD / WATCH</button>
+                <button class="rgb-btn" data-clicks="0" onclick="processLink(this, '{link['url']}', 'area-{idx}')">
+                    ⬇️ DOWNLOAD / WATCH
+                </button>
             </div>
         </div>"""
 
-    # 🔥 Optimized JavaScript (1 Click Logic)
+    # 🔥 Optimized JavaScript (Fixed .innerHTML for Icons)
     script_html = f"""
     <script>
     const AD_LINKS = {json.dumps(final_ad_list)};
-    
-    // User Friendly Setting: Show Ad only ONCE
     const MAX_CLICKS = 1; 
 
     function processLink(btn, realUrl, areaId) {{
         let clicks = parseInt(btn.getAttribute('data-clicks') || 0);
         
         // 1. Button Feedback
-        let originalText = btn.innerText;
-        btn.innerText = "⏳ Verifying...";
+        btn.innerHTML = "⏳ Verifying..."; 
         btn.classList.add('processing');
         btn.disabled = true;
 
-        // 2. Faster Timeout (0.8s) for better UX
         setTimeout(() => {{
             btn.disabled = false;
             btn.classList.remove('processing');
@@ -461,7 +454,9 @@ def generate_html_code(data, links, ad_links_list):
                 window.open(randomAd, '_blank');
                 
                 btn.setAttribute('data-clicks', clicks + 1);
-                btn.innerText = "↻ Click Again (Get Link)";
+                
+                // 🔥 FIX: Using innerHTML allows special characters/icons
+                btn.innerHTML = "&#8635; Click Again (Get Link)"; 
             }} else {{
                 // Success State - Show Green Button
                 btn.style.display = 'none';
@@ -473,9 +468,11 @@ def generate_html_code(data, links, ad_links_list):
                 successBtn.style.background = '#00C853'; // Green
                 successBtn.style.backgroundImage = 'none';
                 successBtn.style.boxShadow = '0 4px 10px rgba(0, 200, 83, 0.4)';
-                successBtn.innerText = "✅ OPEN LINK";
-                successBtn.target = "_blank";
                 
+                // 🔥 FIX: Using innerHTML here too
+                successBtn.innerHTML = "&#9989; OPEN LINK";
+                
+                successBtn.target = "_blank";
                 area.appendChild(successBtn);
             }}
         }}, 800); 
@@ -611,7 +608,7 @@ except Exception as e:
 async def start_cmd(client, message):
     user_conversations.pop(message.from_user.id, None)
     await message.reply_text(
-        "🎬 **Movie & Series Bot (Optimized v21)**\n\n"
+        "🎬 **Movie & Series Bot (Fixed Icons & Speed v22)**\n\n"
         "⚡ `/post <Link or Name>` - Auto Post\n"
         "✍️ `/manual` - Custom Manual Post\n"
         "🛠 `/mysettings` - View Your Ad Links\n"
@@ -861,5 +858,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Bot Started (User Friendly + High Performance v21)!")
+    print("🚀 Bot Started (Fixed Icons & Speed v22)!")
     bot.run()
