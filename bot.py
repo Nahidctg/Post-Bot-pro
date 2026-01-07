@@ -118,7 +118,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Bot is Running! (Safety, Base64 & Blur Enabled)"
+    return "🤖 Bot is Running! (Safety + Manual Toggle v29)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -346,13 +346,16 @@ def apply_badge_to_poster(poster_bytes, text):
     except: return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 SAFE & SMART HTML GENERATOR (Base64, Blur, Timer)
+# 🔥 SAFE & SMART HTML GENERATOR (Base64, Blur, Timer, Force Adult)
 # ============================================================================
 def generate_html_code(data, links, ad_links_list):
     title = data.get("title") or data.get("name")
     overview = data.get("overview", "")
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
-    is_adult = data.get('adult', False)
+    
+    # 🔥 Logic: TMDB Adult Check OR Manual Force Adult
+    is_adult = data.get('adult', False) or data.get('force_adult', False)
+    
     BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
 
     # 🔥 SCREENSHOTS (Neon + Blur if Adult)
@@ -526,7 +529,9 @@ def generate_html_code(data, links, ad_links_list):
 # ---- IMAGE & CAPTION GENERATOR (SAFE MODE) ----
 def generate_formatted_caption(data):
     title = data.get("title") or data.get("name") or "N/A"
-    is_adult = data.get('adult', False)
+    
+    # 🔥 Logic: TMDB Adult OR Manual Force Adult
+    is_adult = data.get('adult', False) or data.get('force_adult', False)
     
     if data.get('is_manual'):
         year = "Custom"
@@ -563,7 +568,9 @@ def generate_image(data):
         if not poster_url: return None, None
 
         poster_bytes = requests.get(poster_url, timeout=10, verify=False).content
-        is_adult = data.get('adult', False)
+        
+        # 🔥 Logic: TMDB Adult OR Manual Force Adult
+        is_adult = data.get('adult', False) or data.get('force_adult', False)
         
         if data.get('badge_text'):
             badge_io = apply_badge_to_poster(poster_bytes, data['badge_text'])
@@ -641,7 +648,7 @@ except Exception as e:
 async def start_cmd(client, message):
     user_conversations.pop(message.from_user.id, None)
     await message.reply_text(
-        "🎬 **Movie & Series Bot (Safety & Base64 v26)**\n\n"
+        "🎬 **Movie & Series Bot (Safety & Base64 v28)**\n\n"
         "⚡ `/post <Link or Name>` - Auto Post (Safe Mode)\n"
         "✍️ `/manual` - Custom Manual Post\n"
         "🛠 `/mysettings` - View Your Ad Links\n"
@@ -700,7 +707,7 @@ async def post_cmd(client, message):
                 m_type = results[0]['media_type']
                 m_id = results[0]['id']
             else:
-                # 🔥 Fallback for Missing IMDb ID
+                # Fallback for Missing IMDb ID
                 return await msg.edit_text(
                     "❌ **TMDB তে এই IMDb ID টি পাওয়া যায়নি!**\n\n"
                     "অনুগ্রহ করে **নাম দিয়ে সার্চ** করুন:\n"
@@ -802,8 +809,12 @@ async def text_handler(client, message):
     
     elif state == "wait_badge_text":
         convo["details"]["badge_text"] = text
-        await message.reply_text(f"✅ ব্যাজ যুক্ত করা হচ্ছে: **{text}**\n\n🕵️‍♂️ **Detecting Faces...**\n⏳ Generating Final Post (Safe Mode)...")
-        await generate_final_post(client, uid, message)
+        # 🔥 ASK SAFETY CHECK INSTEAD OF DIRECT GENERATION
+        buttons = [
+            [InlineKeyboardButton("✅ Safe Content", callback_data=f"safe_yes_{uid}")],
+            [InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]
+        ]
+        await message.reply_text("🛡️ **Safety Check:**\nIs this content 18+/Adult?", reply_markup=InlineKeyboardMarkup(buttons))
 
 @bot.on_callback_query(filters.regex("^lnk_"))
 async def link_cb(client, cb):
@@ -833,8 +844,28 @@ async def skip_badge_cb(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
         user_conversations[uid]["details"]["badge_text"] = None
-        await cb.message.edit_text("⏳ Generating Final Post (Safe Mode)...")
-        await generate_final_post(client, uid, cb.message)
+        # 🔥 ASK SAFETY CHECK HERE TOO
+        buttons = [
+            [InlineKeyboardButton("✅ Safe Content", callback_data=f"safe_yes_{uid}")],
+            [InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]
+        ]
+        await cb.message.edit_text("🛡️ **Safety Check:**\nIs this content 18+/Adult?", reply_markup=InlineKeyboardMarkup(buttons))
+
+# 🔥 NEW: Handle Safety Selection
+@bot.on_callback_query(filters.regex("^safe_"))
+async def safety_cb(client, cb):
+    try:
+        action, uid_str = cb.data.rsplit("_", 1)
+        uid = int(uid_str)
+    except: return
+
+    if uid not in user_conversations: return
+    
+    # Set manual 18+ flag based on button click
+    user_conversations[uid]["details"]["force_adult"] = True if action == "safe_no" else False
+    
+    await cb.message.edit_text("⏳ Generating Final Post...")
+    await generate_final_post(client, uid, cb.message)
 
 async def generate_final_post(client, uid, message):
     if uid not in user_conversations: return await message.edit_text("❌ Session expired.")
@@ -897,5 +928,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Bot Started (v26 - Full Smart & Safe Edition)!")
+    print("🚀 Bot Started (v29 - Full Safety Toggle Integrated)!")
     bot.run()
