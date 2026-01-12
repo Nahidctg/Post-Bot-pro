@@ -345,7 +345,7 @@ def apply_badge_to_poster(poster_bytes, text):
     except: return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 FIXED HTML GENERATOR (Priority: Manual Screenshots)
+# 🔥 FIXED HTML GENERATOR (UPDATED FOR AUTO BOT METADATA)
 # ============================================================================
 def generate_html_code(data, links, ad_links_list):
     title = data.get("title") or data.get("name")
@@ -356,6 +356,23 @@ def generate_html_code(data, links, ad_links_list):
     is_adult = data.get('adult', False) or data.get('force_adult', False)
     
     BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
+
+    # --- 🔥 NEW: METADATA GENERATION (অটো বটের জন্য) ---
+    lang_str = data.get('custom_language', 'Dual Audio').strip()
+    
+    if data.get('is_manual'):
+        genres_str = "Movie / Unknown" 
+    else:
+        genres_list = [g['name'] for g in data.get('genres', [])]
+        genres_str = ", ".join(genres_list) if genres_list else "Movie"
+
+    # মেটাডাটা HTML (এটি ব্লগে হিডেন থাকবে, কিন্তু বোট পড়তে পারবে)
+    meta_html = f"""
+    <!-- HIDDEN METADATA -->
+    <div style="display:none;" id="meta-genre">{genres_str}</div>
+    <div style="display:none;" id="meta-language">{lang_str}</div>
+    """
+    # ----------------------------------------------------
 
     # 🔥 SCREENSHOTS LOGIC (UPDATED)
     ss_html = ""
@@ -530,6 +547,9 @@ def generate_html_code(data, links, ad_links_list):
             Protected by DMCA. Content may contain 18+ themes.
         </div>
     </div>
+    
+    {meta_html} <!-- 🔥 ADDED FOR AUTO-POST BOT -->
+    
     {script_html}
     """
 
