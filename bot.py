@@ -9,6 +9,7 @@ import asyncio
 import logging
 import random
 import base64
+import datetime
 import aiohttp
 import requests 
 import urllib3 
@@ -25,6 +26,7 @@ from pyrogram.types import (
 )
 from flask import Flask
 from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient 
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -42,33 +44,89 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 
+# 🔥 NEW ADMIN & DB CONFIG
+MONGO_URL = os.getenv("MONGO_URL") 
+OWNER_ID = int(os.getenv("OWNER_ID", 0)) 
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
+
 # Check Variables
-if not all([BOT_TOKEN, API_ID, API_HASH, TMDB_API_KEY]):
+if not all([BOT_TOKEN, API_ID, API_HASH, TMDB_API_KEY, MONGO_URL]):
     logger.critical("❌ FATAL ERROR: Variables missing in .env file!")
     exit(1)
 
 # ====================================================================
-# 🔥 OWNER PROFIT SETUP
+# 🔥 DATABASE CONNECTION (MONGODB)
 # ====================================================================
-OWNER_AD_LINKS = [
+try:
+    mongo_client = AsyncIOMotorClient(MONGO_URL)
+    db = mongo_client["movie_bot_db"]
+    users_col = db["users"]
+    settings_col = db["settings"]
+    user_settings_col = db["user_settings"]
+    logger.info("✅ MongoDB Connected Successfully!")
+except Exception as e:
+    logger.critical(f"❌ MongoDB Connection Failed: {e}")
+    exit(1)
+
+# ---- DEFAULT SETTINGS ----
+DEFAULT_OWNER_AD_LINKS = [
     "https://www.effectivegatecpm.com/c90zejmfrg?key=45a67d2f1523ee6b3988c4cc8f764a35",
     "https://www.effectivegatecpm.com/q5cpmxwy44?key=075b9f116b4174922cadfae2d3291743",
     "https://www.effectivegatecpm.com/p4bm30ss3?key=8bb102e9258871570c79a9a90fa3cf9f"
 ]
+DEFAULT_USER_AD_LINKS = ["https://www.google.com", "https://www.bing.com"] 
 
-# ---- GLOBAL STATE ----
 user_conversations = {}
-user_ad_links = {} 
-USER_AD_LINKS_FILE = "user_ad_links.json"
-DEFAULT_AD_LINKS = [
-    "https://www.google.com", 
-    "https://www.bing.com"
-] 
+
+# ---- DATABASE FUNCTIONS ----
+async def add_user(user_id, name):
+    if not await users_col.find_one({"_id": user_id}):
+        await users_col.insert_one({
+            "_id": user_id, 
+            "name": name,
+            "authorized": False, 
+            "banned": False,
+            "joined_date": datetime.datetime.now()
+        })
+
+async def is_authorized(user_id):
+    if user_id == OWNER_ID: return True
+    user = await users_col.find_one({"_id": user_id})
+    if not user: return False
+    return user.get("authorized", False) and not user.get("banned", False)
+
+async def is_banned(user_id):
+    user = await users_col.find_one({"_id": user_id})
+    return user and user.get("banned", False)
+
+async def get_owner_ads():
+    data = await settings_col.find_one({"_id": "main_config"})
+    return data.get("owner_ads", DEFAULT_OWNER_AD_LINKS) if data else DEFAULT_OWNER_AD_LINKS
+
+async def set_owner_ads_db(links):
+    await settings_col.update_one(
+        {"_id": "main_config"}, 
+        {"$set": {"owner_ads": links}}, 
+        upsert=True
+    )
+
+async def get_user_ads(user_id):
+    data = await user_settings_col.find_one({"_id": user_id})
+    return data.get("ad_links", DEFAULT_USER_AD_LINKS) if data else DEFAULT_USER_AD_LINKS
+
+async def save_user_ads(user_id, links):
+    await user_settings_col.update_one(
+        {"_id": user_id}, 
+        {"$set": {"ad_links": links}}, 
+        upsert=True
+    )
+
+async def get_all_users_count():
+    return await users_col.count_documents({})
 
 # ---- RESOURCES URLS ----
 URL_FONT = "https://raw.githubusercontent.com/mahabub81/bangla-fonts/master/Kalpurush.ttf"
 URL_MODEL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
-
 
 # ---- ASYNC HTTP SESSION ----
 async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
@@ -86,39 +144,12 @@ async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
             return None
     return None
 
-# ---- PERSISTENCE FUNCTIONS ----
-def save_json(filename, data):
-    try:
-        with open(filename, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        logger.error(f"Save JSON Error: {e}")
-
-def load_json(filename):
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r") as f:
-                data = json.load(f)
-                processed_data = {}
-                for k, v in data.items():
-                    if isinstance(v, str):
-                        processed_data[int(k)] = [v]
-                    else:
-                        processed_data[int(k)] = v
-                return processed_data
-        except Exception as e:
-            logger.error(f"Load JSON Error: {e}")
-    return {}
-
-# Load saved data
-user_ad_links = load_json(USER_AD_LINKS_FILE)
-
 # ---- FLASK KEEP-ALIVE ----
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Bot is Running! (Multi-Server Upload v33)"
+    return "🤖 Ultimate Bot Running (MongoDB + Log Channel + 4x Upload) v36"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -170,46 +201,36 @@ def get_font(size=60, bold=False):
 # ====================================================================
 # 🔥 ULTRA POWERFUL UPLOAD FUNCTION (4-Layer Backup System)
 # ====================================================================
-
 def upload_image_core(file_content):
-    # SERVER 1: Catbox.moe (Most Reliable)
+    # 1. Catbox.moe
     try:
         url = "https://catbox.moe/user/api.php"
         data = {"reqtype": "fileupload", "userhash": ""}
         files = {"fileToUpload": ("image.png", file_content, "image/png")}
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.post(url, data=data, files=files, headers=headers, timeout=10, verify=False)
-        if response.status_code == 200:
-            logger.info("✅ Uploaded to Catbox")
-            return response.text.strip()
-    except Exception as e:
-        logger.warning(f"⚠️ Catbox Failed: {e}")
+        if response.status_code == 200: return response.text.strip()
+    except: pass
 
-    # SERVER 2: 0x0.st (Fastest)
+    # 2. 0x0.st
     try:
         url = "https://0x0.st"
         files = {'file': ('image.jpg', file_content)}
         response = requests.post(url, files=files, timeout=8, verify=False)
-        if response.status_code == 200:
-            logger.info("✅ Uploaded to 0x0.st")
-            return response.text.strip()
-    except Exception as e:
-        logger.warning(f"⚠️ 0x0.st Failed: {e}")
+        if response.status_code == 200: return response.text.strip()
+    except: pass
 
-    # SERVER 3: Uguu.se (New Backup)
+    # 3. Uguu.se
     try:
         url = "https://uguu.se/upload"
         files = {'files[]': ('image.jpg', file_content)}
         response = requests.post(url, files=files, timeout=10, verify=False)
         if response.status_code == 200:
             json_data = response.json()
-            if json_data.get("success"):
-                logger.info("✅ Uploaded to Uguu.se")
-                return json_data["files"][0]["url"]
-    except Exception as e:
-        logger.warning(f"⚠️ Uguu.se Failed: {e}")
+            if json_data.get("success"): return json_data["files"][0]["url"]
+    except: pass
 
-    # SERVER 4: Graph.org (Last Resort)
+    # 4. Graph.org
     try:
         url = "https://graph.org/upload"
         files = {'file': ('image.jpg', file_content, 'image/jpeg')}
@@ -217,10 +238,8 @@ def upload_image_core(file_content):
         response = requests.post(url, files=files, headers=headers, timeout=8, verify=False)
         if response.status_code == 200:
             json_data = response.json()
-            logger.info("✅ Uploaded to Graph.org")
             return "https://graph.org" + json_data[0]["src"]
-    except Exception as e:
-        logger.warning(f"⚠️ Graph.org Failed: {e}")
+    except: pass
 
     logger.error("❌ ALL 4 UPLOAD SERVERS FAILED.")
     return None
@@ -244,21 +263,15 @@ def upload_to_catbox(file_path):
 
 # ---- TMDB & LINK EXTRACTION ----
 def extract_tmdb_id(text):
-    # 1. TMDB Link
     tmdb_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', text)
     if tmdb_match:
         return tmdb_match.group(1), tmdb_match.group(2)
-    
-    # 2. IMDb Link (Strict)
     imdb_url_match = re.search(r'imdb\.com/title/(tt\d+)', text)
     if imdb_url_match:
         return "imdb", imdb_url_match.group(1)
-
-    # 3. IMDb ID Only
     imdb_id_match = re.search(r'(tt\d{6,})', text)
     if imdb_id_match:
         return "imdb", imdb_id_match.group(1)
-        
     return None, None
 
 async def search_tmdb(query):
@@ -297,10 +310,8 @@ def get_smart_badge_position(pil_img):
     try:
         cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-        
         cascade_path = "haarcascade_frontalface_default.xml"
-        if not os.path.exists(cascade_path):
-            return int(pil_img.height * 0.40) 
+        if not os.path.exists(cascade_path): return int(pil_img.height * 0.40) 
 
         face_cascade = cv2.CascadeClassifier(cascade_path)
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
@@ -309,27 +320,20 @@ def get_smart_badge_position(pil_img):
             lowest_y = 0
             for (x, y, w, h) in faces:
                 bottom_of_face = y + h
-                if bottom_of_face > lowest_y:
-                    lowest_y = bottom_of_face
-            
+                if bottom_of_face > lowest_y: lowest_y = bottom_of_face
             target_y = lowest_y + 40 
-            if target_y > (pil_img.height - 130):
-                return 80 
+            if target_y > (pil_img.height - 130): return 80 
             return target_y
-        else:
-            return int(pil_img.height * 0.40) 
-            
+        else: return int(pil_img.height * 0.40) 
     except: return 200
 
 def apply_badge_to_poster(poster_bytes, text):
     try:
         base_img = Image.open(io.BytesIO(poster_bytes)).convert("RGBA")
         width, height = base_img.size
-        
         font = get_font(size=70) 
         pos_y = get_smart_badge_position(base_img)
         draw = ImageDraw.Draw(base_img)
-        
         bbox = draw.textbbox((0, 0), text, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
@@ -343,13 +347,10 @@ def apply_badge_to_poster(poster_bytes, text):
         ImageDraw.Draw(overlay).rectangle([pos_x, pos_y, pos_x + box_w, pos_y + box_h], fill=(0, 0, 0, 220))
         base_img = Image.alpha_composite(base_img, overlay)
         draw = ImageDraw.Draw(base_img)
-        
         cx = pos_x + padding_x
         cy = pos_y + padding_y - 12
-        
         colors = ["#FFEB3B", "#FF5722"]
         words = text.split()
-        
         if len(words) >= 2:
             draw.text((cx, cy), words[0], font=font, fill=colors[0])
             w1 = draw.textlength(words[0], font=font)
@@ -364,44 +365,35 @@ def apply_badge_to_poster(poster_bytes, text):
     except: return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 FIXED HTML GENERATOR (UPDATED FOR AUTO BOT METADATA)
+# 🔥 HTML GENERATOR (EXACT REPLICA OF ORIGINAL DESIGN)
 # ============================================================================
-def generate_html_code(data, links, ad_links_list):
+def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
     title = data.get("title") or data.get("name")
     overview = data.get("overview", "")
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
-    
-    # 🔥 Logic: TMDB Adult Check OR Manual Force Adult
     is_adult = data.get('adult', False) or data.get('force_adult', False)
-    
     BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
 
-    # --- 🔥 NEW: METADATA GENERATION (অটো বটের জন্য) ---
     lang_str = data.get('custom_language', 'Dual Audio').strip()
-    
-    if data.get('is_manual'):
-        genres_str = "Movie / Unknown" 
+    if data.get('is_manual'): genres_str = "Movie / Unknown" 
     else:
         genres_list = [g['name'] for g in data.get('genres', [])]
         genres_str = ", ".join(genres_list) if genres_list else "Movie"
 
-    # মেটাডাটা HTML (এটি ব্লগে হিডেন থাকবে, কিন্তু বোট পড়তে পারবে)
     meta_html = f"""
     <!-- HIDDEN METADATA -->
     <div style="display:none;" id="meta-genre">{genres_str}</div>
     <div style="display:none;" id="meta-language">{lang_str}</div>
     """
-    # ----------------------------------------------------
 
-    # 🔥 SCREENSHOTS LOGIC (UPDATED)
     ss_html = ""
-    # 1. Check for Manual Screenshots First
+    # 1. Manual Screenshots (Restored Original Logic)
     if data.get('manual_screenshots'):
         for ss_url in data['manual_screenshots']:
             blur_class = "blur-content" if is_adult else ""
             ss_html += f'<div class="ss-wrapper"><img src="{ss_url}" class="neon-ss {blur_class}" onclick="toggleBlur(this)" alt="Screenshot"></div>'
     
-    # 2. Fallback to Auto TMDB Screenshots
+    # 2. TMDB Screenshots
     elif not data.get('is_manual') and data.get("images"):
         backdrops = data["images"].get("backdrops", [])
         count = 0
@@ -415,115 +407,67 @@ def generate_html_code(data, links, ad_links_list):
     
     ss_section = ""
     if ss_html:
-        ss_section = f"""
-        <div class="ss-container">
-            <h3 style="color: #ff00de; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ff00de; display: inline-block;">📸 SCREENSHOTS</h3>
-            {ss_html}
-        </div>
-        """
+        ss_section = f"""<div class="ss-container"><h3 style="color: #ff00de; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ff00de; display: inline-block;">📸 SCREENSHOTS</h3>{ss_html}</div>"""
 
-    # 🔥 BASE64 ENCRYPTION FOR LINKS
     links_html = ""
     for idx, link in enumerate(links):
         encoded_url = base64.b64encode(link['url'].encode('utf-8')).decode('utf-8')
-        
         links_html += f"""
         <div class="dl-item">
             <span class="dl-link-label">📂 {link['label']}</span>
-            <div id="area-{idx}">
-                <button class="rgb-btn" onclick="secureLink(this, '{encoded_url}', 'area-{idx}')">
-                    🔒 SECURE DOWNLOAD
-                </button>
-            </div>
+            <div id="area-{idx}"><button class="rgb-btn" onclick="secureLink(this, '{encoded_url}', 'area-{idx}')">🔒 SECURE DOWNLOAD</button></div>
         </div>"""
 
-    # Ad Mixing
-    final_ad_list = list(ad_links_list)
-    if OWNER_AD_LINKS:
-        final_ad_list.extend(OWNER_AD_LINKS)
+    final_ad_list = list(user_ad_links_list)
+    if owner_ad_links_list: final_ad_list.extend(owner_ad_links_list)
     random.shuffle(final_ad_list) 
+    if not final_ad_list: final_ad_list = ["https://google.com"]
 
     style_html = """
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
         body { margin: 0; padding: 10px; background-color: #050505; font-family: 'Poppins', sans-serif; color: #fff; }
-        .main-card {
-            max-width: 600px; margin: 0 auto; background: #121212;
-            border: 1px solid #333; border-radius: 15px; padding: 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.8); text-align: center;
-        }
-        
+        .main-card { max-width: 600px; margin: 0 auto; background: #121212; border: 1px solid #333; border-radius: 15px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); text-align: center; }
         .blur-content { filter: blur(20px); transition: filter 0.4s ease; cursor: pointer; }
         .blur-content:hover { filter: blur(10px); }
         .blur-content.blur-active { filter: none !important; }
-        
         .poster-wrapper { position: relative; display: inline-block; width: 100%; max-width: 250px; }
-        
-        .reveal-btn { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            background: rgba(0,0,0,0.8); color: #FF5252; padding: 10px 20px; 
-            border: 2px solid #FF5252; font-weight: bold; border-radius: 5px; 
-            cursor: pointer; display: none; z-index: 10; pointer-events: none; 
-        }
-        
+        .reveal-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: #FF5252; padding: 10px 20px; border: 2px solid #FF5252; font-weight: bold; border-radius: 5px; cursor: pointer; display: none; z-index: 10; pointer-events: none; }
         .is-blurred .reveal-btn { display: block; }
-
         .poster-img { width: 100%; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.7); margin-bottom: 15px; border: 2px solid #333; }
         h2 { color: #00d2ff; margin: 10px 0; font-size: 22px; font-weight: 700; }
         p { text-align: justify; color: #ccc; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
-        
         .ss-container { margin: 25px 0; }
         .neon-ss { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 2px solid #ff00de; box-shadow: 0 0 15px rgba(255, 0, 222, 0.3); }
-
         .dl-item { background: #1f1f1f; padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #333; }
         .dl-link-label { display: block; font-size: 16px; color: #ffeb3b; margin-bottom: 10px; font-weight: 600; text-transform: uppercase; }
-        
-        .rgb-btn {
-            width: 100%; padding: 14px; font-size: 18px; font-weight: bold;
-            color: white; border: none; border-radius: 8px; cursor: pointer;
-            background: linear-gradient(45deg, #FF512F, #DD2476);
-            display: flex; align-items: center; justify-content: center; gap: 10px;
-        }
-        
+        .rgb-btn { width: 100%; padding: 14px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(45deg, #FF512F, #DD2476); display: flex; align-items: center; justify-content: center; gap: 10px; }
         .disclaimer { font-size: 10px; color: #555; margin-top: 30px; border-top: 1px solid #222; padding-top: 10px; }
     </style>
     """
 
-    # 🔥 UPDATED JS LOGIC (Countdown + Auto Redirect)
     script_html = f"""
     <script>
     const AD_LINKS = {json.dumps(final_ad_list)};
-    
     function toggleBlur(el) {{
         el.classList.toggle('blur-active');
         let wrapper = el.parentElement;
-        if(wrapper.classList.contains('poster-wrapper')) {{
-            wrapper.classList.remove('is-blurred');
-        }}
+        if(wrapper.classList.contains('poster-wrapper')) {{ wrapper.classList.remove('is-blurred'); }}
     }}
-
     function secureLink(btn, b64Url, areaId) {{
-        // 1. Decrypt Link
         let realUrl = atob(b64Url);
-        
-        // 2. Open Ad Immediately
         let randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
         window.open(randomAd, '_blank');
-        
-        // 3. Countdown & Auto Redirect Logic
         let timeLeft = 5;
         btn.disabled = true;
         btn.style.background = "#444";
-        
         let timer = setInterval(function() {{
             btn.innerHTML = "⏳ Wait... " + timeLeft + "s";
             timeLeft--;
-            
             if (timeLeft < 0) {{
                 clearInterval(timer);
                 btn.innerHTML = "🚀 Opening...";
                 btn.style.background = "#00C853";
-                // 🔥 Auto Redirect Here
                 window.location.href = realUrl;
             }}
         }}, 1000); 
@@ -536,47 +480,30 @@ def generate_html_code(data, links, ad_links_list):
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (Fixed v32) -->
+    <!-- Auto Redirect Code (v36 Pro) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
             <img src="{poster}" class="{poster_img_class}" onclick="toggleBlur(this)">
             {reveal_html}
         </div>
-        
         <h2>{title}</h2>
         <p>{overview[:350]}...</p>
-        
         {ss_section}
-        
-        <div class="instruction-box">
-            ℹ️ <b>Safe Download:</b> Click button > Ad opens > Wait 5s > <b>Auto Redirect</b>
-        </div>
-
+        <div class="instruction-box">ℹ️ <b>Safe Download:</b> Click button > Ad opens > Wait 5s > <b>Auto Redirect</b></div>
         <div class="dl-container-area">{links_html}</div>
-        
         <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
-            <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank">
-                <img src="{BTN_TELEGRAM}" style="width: 100%; max-width: 300px; border-radius: 50px; border: 2px solid #333;">
-            </a>
+            <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}" style="width: 100%; max-width: 300px; border-radius: 50px; border: 2px solid #333;"></a>
         </div>
-        
-        <div class="disclaimer">
-            ⚖️ <b>Disclaimer:</b> We do not host any files. Links are provided by third-party users. 
-            Protected by DMCA. Content may contain 18+ themes.
-        </div>
+        <div class="disclaimer">⚖️ <b>Disclaimer:</b> We do not host any files. Links are provided by third-party users. Protected by DMCA. Content may contain 18+ themes.</div>
     </div>
-    
-    {meta_html} <!-- 🔥 ADDED FOR AUTO-POST BOT -->
-    
+    {meta_html}
     {script_html}
     """
 
-# ---- IMAGE & CAPTION GENERATOR (SAFE MODE) ----
+# ---- IMAGE & CAPTION GENERATOR ----
 def generate_formatted_caption(data):
     title = data.get("title") or data.get("name") or "N/A"
-    
-    # 🔥 Logic: TMDB Adult OR Manual Force Adult
     is_adult = data.get('adult', False) or data.get('force_adult', False)
     
     if data.get('is_manual'):
@@ -591,28 +518,21 @@ def generate_formatted_caption(data):
         language = data.get('custom_language', '').title()
     
     overview = data.get("overview", "No plot available.")
-    
     caption = f"🎬 **{title} ({year})**\n\n"
     
-    # 🔥 Safety Warning
     if is_adult:
         caption += "⚠️ **WARNING: 18+ Content.**\n_Suitable for mature audiences only._\n\n"
-
     if not data.get('is_manual'):
         caption += f"**🎭 Genres:** {genres}\n**🗣️ Language:** {language}\n**⭐ Rating:** {rating}\n\n"
-    
     caption += f"**📝 Plot:** _{overview[:300]}..._\n\n⚠️ _Disclaimer: Informational post only._"
     return caption
 
 def generate_image(data):
     try:
-        if data.get('manual_poster_url'):
-            poster_url = data.get('manual_poster_url')
-        else:
-            poster_url = f"https://image.tmdb.org/t/p/w500{data['poster_path']}" if data.get('poster_path') else None
+        if data.get('manual_poster_url'): poster_url = data.get('manual_poster_url')
+        else: poster_url = f"https://image.tmdb.org/t/p/w500{data['poster_path']}" if data.get('poster_path') else None
         
         if not poster_url: return None, None
-
         poster_bytes = requests.get(poster_url, timeout=10, verify=False).content
         is_adult = data.get('adult', False) or data.get('force_adult', False)
         
@@ -621,10 +541,7 @@ def generate_image(data):
             poster_bytes = badge_io.getvalue()
 
         poster_img = Image.open(io.BytesIO(poster_bytes)).convert("RGBA").resize((400, 600))
-        
-        # 🔥 AUTO BLUR FOR TELEGRAM IMAGE
-        if is_adult:
-            poster_img = poster_img.filter(ImageFilter.GaussianBlur(20))
+        if is_adult: poster_img = poster_img.filter(ImageFilter.GaussianBlur(20))
 
         bg_img = Image.new('RGBA', (1280, 720), (10, 10, 20))
         backdrop = None
@@ -635,32 +552,24 @@ def generate_image(data):
                 backdrop = Image.open(io.BytesIO(bd_bytes)).convert("RGBA").resize((1280, 720))
             except: pass
         
-        if not backdrop:
-            backdrop = poster_img.resize((1280, 720))
-            
+        if not backdrop: backdrop = poster_img.resize((1280, 720))
         backdrop = backdrop.filter(ImageFilter.GaussianBlur(10))
         bg_img = Image.alpha_composite(backdrop, Image.new('RGBA', (1280, 720), (0, 0, 0, 150))) 
-
         bg_img.paste(poster_img, (50, 60), poster_img)
         draw = ImageDraw.Draw(bg_img)
-        
         f_bold = get_font(size=36, bold=True)
         f_reg = get_font(size=24, bold=False)
 
         title = data.get("title") or data.get("name")
         year = (data.get("release_date") or data.get("first_air_date") or "----")[:4]
         if data.get('is_manual'): year = ""
-        
         if is_adult: title += " (18+)"
 
         draw.text((480, 80), f"{title} {year}", font=f_bold, fill="white", stroke_width=1, stroke_fill="black")
-        
         if not data.get('is_manual'):
             draw.text((480, 140), f"⭐ {data.get('vote_average', 0):.1f}/10", font=f_reg, fill="#00e676")
-            if is_adult:
-                draw.text((480, 180), "⚠️ RESTRICTED CONTENT", font=get_font(18), fill="#FF5252")
-            else:
-                draw.text((480, 180), " | ".join([g["name"] for g in data.get("genres", [])]), font=get_font(18), fill="#00bcd4")
+            if is_adult: draw.text((480, 180), "⚠️ RESTRICTED CONTENT", font=get_font(18), fill="#FF5252")
+            else: draw.text((480, 180), " | ".join([g["name"] for g in data.get("genres", [])]), font=get_font(18), fill="#00bcd4")
         
         overview = data.get("overview", "")
         lines = [overview[i:i+80] for i in range(0, len(overview), 80)][:6]
@@ -673,7 +582,6 @@ def generate_image(data):
         img_buffer.name = "poster.png"
         bg_img.save(img_buffer, format="PNG")
         img_buffer.seek(0)
-        
         return img_buffer, poster_bytes 
     except Exception as e:
         logger.error(f"Img Gen Error: {e}")
@@ -687,59 +595,102 @@ except Exception as e:
     exit(1)
 
 # ---- BOT COMMANDS ----
-
 @bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
-    user_conversations.pop(message.from_user.id, None)
-    await message.reply_text(
-        "🎬 **Movie & Series Bot (v33)**\n"
-        "✨ **New:** Multi-Server Upload (4x Backup)\n\n"
-        "⚡ `/post <Link or Name>` - Auto Post\n"
-        "✍️ `/manual` - Custom Post (Poster + Screenshots)\n"
-        "🛠 `/mysettings` - View Ad Links\n"
-        "⚙️ `/setadlink <URL>` - Set Ad Links"
-    )
+    uid = message.from_user.id
+    name = message.from_user.first_name
+    await add_user(uid, name) 
+    
+    user_conversations.pop(uid, None)
+    if not await is_authorized(uid):
+        return await message.reply_text("⚠️ **ACCESS DENIED**\n\nYou need admin approval to use this bot.\nContact Owner.")
 
+    await message.reply_text("🎬 **Movie & Series Bot (v36 Ultimate)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🛠 `/mysettings` - View Ad Links\n⚙️ `/setadlink <URL>` - Set Ad Links")
+
+@bot.on_message(filters.command("auth") & filters.user(OWNER_ID))
+async def auth_user(client, message):
+    try:
+        target_id = int(message.command[1])
+        await users_col.update_one({"_id": target_id}, {"$set": {"authorized": True, "banned": False}}, upsert=True)
+        await message.reply_text(f"✅ User {target_id} is now **AUTHORIZED**.")
+        await client.send_message(target_id, "✅ **Congratulations!** You have been authorized to use the bot.")
+    except: await message.reply_text("❌ Usage: `/auth 123456789`")
+
+@bot.on_message(filters.command("ban") & filters.user(OWNER_ID))
+async def ban_user(client, message):
+    try:
+        target_id = int(message.command[1])
+        await users_col.update_one({"_id": target_id}, {"$set": {"banned": True}})
+        await message.reply_text(f"🚫 User {target_id} has been **BANNED**.")
+    except: await message.reply_text("❌ Usage: `/ban 123456789`")
+
+@bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
+async def bot_stats(client, message):
+    total = await get_all_users_count()
+    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n✅ **System:** Online\n🚀 **Version:** v36 (Final)")
+
+@bot.on_message(filters.command("setownerads") & filters.user(OWNER_ID))
+async def set_owner_ads_cmd(client, message):
+    if len(message.command) > 1:
+        links = message.text.split(None, 1)[1].split()
+        valid = [l for l in links if l.startswith("http")]
+        if valid:
+            await set_owner_ads_db(valid)
+            await message.reply_text(f"✅ **Owner Ads Updated!** ({len(valid)} links)")
+        else: await message.reply_text("❌ Invalid Links.")
+    else: await message.reply_text("⚠️ Usage: `/setownerads link1 link2`")
+
+@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast_msg(client, message):
+    if not message.reply_to_message: return await message.reply_text("⚠️ Reply to a message to broadcast.")
+    msg = await message.reply_text("⏳ Broadcasting...")
+    count = 0
+    async for user in users_col.find({}):
+        try:
+            await message.reply_to_message.copy(user["_id"])
+            count += 1
+            await asyncio.sleep(0.1) 
+        except: pass
+    await msg.edit_text(f"✅ Broadcast Sent to **{count}** users.")
+
+# ---- USER COMMANDS ----
 @bot.on_message(filters.command("mysettings") & filters.private)
 async def mysettings_cmd(client, message):
     uid = message.from_user.id
-    my_links = user_ad_links.get(uid, DEFAULT_AD_LINKS)
+    if not await is_authorized(uid): return
+    my_links = await get_user_ads(uid)
     links_str = "\n".join([f"{i+1}. {l}" for i, l in enumerate(my_links)])
     await message.reply_text(f"⚙️ **MY SETTINGS**\n\n🔗 **Your Ad Links:**\n{links_str}", disable_web_page_preview=True)
 
 @bot.on_message(filters.command("setadlink") & filters.private)
 async def set_ad(client, message):
+    uid = message.from_user.id
+    if not await is_authorized(uid): return
     if len(message.command) > 1:
         raw_links = message.text.split(None, 1)[1].split()
         valid_links = [l for l in raw_links if l.startswith("http")]
         if valid_links:
-            user_ad_links[message.from_user.id] = valid_links
-            save_json(USER_AD_LINKS_FILE, user_ad_links)
+            await save_user_ads(uid, valid_links)
             links_str = "\n".join([f"{i+1}. {l}" for i, l in enumerate(valid_links)])
-            await message.reply_text(f"✅ **Ad Links Saved!** ({len(valid_links)} links)\n\n{links_str}")
-        else:
-            await message.reply_text("⚠️ Invalid Links. Must start with http/https.")
-    else:
-        await message.reply_text("⚠️ Usage Example:\n`/setadlink https://site1.com https://site2.com`")
+            await message.reply_text(f"✅ **Ad Links Saved!**\n\n{links_str}")
+        else: await message.reply_text("⚠️ Invalid Links.")
+    else: await message.reply_text("⚠️ Usage Example:\n`/setadlink https://site1.com https://site2.com`")
 
 @bot.on_message(filters.command("manual") & filters.private)
 async def manual_post_cmd(client, message):
     uid = message.from_user.id
-    user_conversations[uid] = {
-        "details": {"is_manual": True, "manual_screenshots": []}, 
-        "links": [], 
-        "state": "manual_title"
-    }
+    if not await is_authorized(uid): return await message.reply_text("🚫 Not Authorized.")
+    user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots": []}, "links": [], "state": "manual_title" }
     await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:")
 
 @bot.on_message(filters.command("post") & filters.private)
 async def post_cmd(client, message):
-    if len(message.command) < 2:
-        return await message.reply_text("⚠️ Usage:\n`/post Avatar` (Search by Name)\n`/post https://...` (By TMDB/IMDb Link)")
+    uid = message.from_user.id
+    if not await is_authorized(uid): return await message.reply_text("🚫 Not Authorized.")
+    if len(message.command) < 2: return await message.reply_text("⚠️ Usage:\n`/post Avatar`")
     
     query = message.text.split(" ", 1)[1].strip()
     msg = await message.reply_text(f"🔎 Processing `{query}`...")
-
     m_type, m_id = extract_tmdb_id(query)
 
     if m_type and m_id:
@@ -747,30 +698,21 @@ async def post_cmd(client, message):
             find_url = f"https://api.themoviedb.org/3/find/{m_id}?api_key={TMDB_API_KEY}&external_source=imdb_id"
             data = await fetch_url(find_url)
             results = data.get("movie_results", []) + data.get("tv_results", [])
-            
-            if results:
-                m_type = results[0]['media_type']
-                m_id = results[0]['id']
-            else:
-                return await msg.edit_text("❌ IMDb ID not found in TMDB.")
+            if results: m_type, m_id = results[0]['media_type'], results[0]['id']
+            else: return await msg.edit_text("❌ IMDb ID not found in TMDB.")
 
         details = await get_tmdb_details(m_type, m_id)
-        if not details: return await msg.edit_text("❌ Details not found from Link.")
-        
-        user_conversations[message.from_user.id] = {
-            "details": details, "links": [], "state": "wait_lang"
-        }
+        if not details: return await msg.edit_text("❌ Details not found.")
+        user_conversations[message.from_user.id] = { "details": details, "links": [], "state": "wait_lang" }
         await msg.edit_text(f"✅ Found: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language** (e.g. Hindi):")
         return
 
     results = await search_tmdb(query)
-    if not results: return await msg.edit_text("❌ No results found. Check spelling.")
-    
+    if not results: return await msg.edit_text("❌ No results found.")
     buttons = []
     for r in results:
         btn_text = f"{r.get('title') or r.get('name')} ({str(r.get('release_date') or '----')[:4]})"
         buttons.append([InlineKeyboardButton(btn_text, callback_data=f"sel_{r['media_type']}_{r['id']}")])
-    
     await msg.edit_text("👇 **Select Content:**", reply_markup=InlineKeyboardMarkup(buttons))
 
 @bot.on_callback_query(filters.regex("^sel_"))
@@ -779,16 +721,12 @@ async def on_select(client, cb):
         _, m_type, m_id = cb.data.split("_")
         details = await get_tmdb_details(m_type, m_id)
         if not details: return await cb.message.edit_text("❌ Details not found.")
-
-        user_conversations[cb.from_user.id] = {
-            "details": details, "links": [], "state": "wait_lang"
-        }
+        user_conversations[cb.from_user.id] = { "details": details, "links": [], "state": "wait_lang" }
         await cb.message.edit_text(f"✅ Selected: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language** (e.g. Hindi):")
-    except Exception as e:
-        logger.error(f"Select Error: {e}")
+    except Exception as e: logger.error(f"Select Error: {e}")
 
 # ---- CONVERSATION HANDLER ----
-@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "setadlink", "mysettings"]))
+@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads"]))
 async def text_handler(client, message):
     uid = message.from_user.id
     if uid not in user_conversations: return
@@ -816,38 +754,27 @@ async def text_handler(client, message):
             os.remove(photo_path)
             if img_url:
                 convo["details"]["manual_poster_url"] = img_url
-                # 🔥 NEW STEP: Ask for Screenshots
                 convo["state"] = "ask_screenshots"
-                buttons = [
-                    [InlineKeyboardButton("📸 Add Screenshots", callback_data=f"ss_yes_{uid}")],
-                    [InlineKeyboardButton("⏭️ Skip", callback_data=f"ss_no_{uid}")]
-                ]
-                await msg.edit_text(f"✅ Poster Uploaded!\n\n📸 **Add Custom Screenshots?**\n(Or skip to use default/none)", reply_markup=InlineKeyboardMarkup(buttons))
+                buttons = [[InlineKeyboardButton("📸 Add Screenshots", callback_data=f"ss_yes_{uid}")], [InlineKeyboardButton("⏭️ Skip", callback_data=f"ss_no_{uid}")]]
+                await msg.edit_text(f"✅ Poster Uploaded!\n\n📸 **Add Custom Screenshots?**", reply_markup=InlineKeyboardMarkup(buttons))
             else: await msg.edit_text("❌ Poster Upload Failed.")
         except: await msg.edit_text("❌ Error uploading poster.")
 
-    # 🔥 HANDLE SCREENSHOT UPLOADS
     elif state == "wait_screenshots":
         if not message.photo: return await message.reply_text("⚠️ Please send a PHOTO for screenshot.")
-        
         msg = await message.reply_text("⏳ Uploading Screenshot...")
         try:
             photo_path = await message.download()
             ss_url = upload_to_catbox(photo_path)
             os.remove(photo_path)
-            
             if ss_url:
-                if "manual_screenshots" not in convo["details"]:
-                    convo["details"]["manual_screenshots"] = []
+                if "manual_screenshots" not in convo["details"]: convo["details"]["manual_screenshots"] = []
                 convo["details"]["manual_screenshots"].append(ss_url)
-                
                 count = len(convo["details"]["manual_screenshots"])
                 buttons = [[InlineKeyboardButton("✅ DONE", callback_data=f"ss_done_{uid}")]]
                 await msg.edit_text(f"✅ **Screenshot {count} Added!**\n\nSend another photo OR click DONE.", reply_markup=InlineKeyboardMarkup(buttons))
-            else:
-                await msg.edit_text("❌ Failed to upload screenshot.")
-        except:
-            await msg.edit_text("❌ Error processing screenshot.")
+            else: await msg.edit_text("❌ Failed to upload.")
+        except: await msg.edit_text("❌ Error processing.")
 
     elif state == "wait_lang":
         convo["details"]["custom_language"] = text
@@ -871,34 +798,24 @@ async def text_handler(client, message):
             convo["state"] = "ask_links"
             buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")], [InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
             await message.reply_text(f"✅ Added! Total: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
-        else:
-            await message.reply_text("⚠️ Invalid URL. Try again.")
+        else: await message.reply_text("⚠️ Invalid URL.")
     
     elif state == "wait_badge_text":
         convo["details"]["badge_text"] = text
-        buttons = [
-            [InlineKeyboardButton("✅ Safe Content", callback_data=f"safe_yes_{uid}")],
-            [InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]
-        ]
-        await message.reply_text("🛡️ **Safety Check:**\nIs this content 18+/Adult?", reply_markup=InlineKeyboardMarkup(buttons))
+        buttons = [[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}")], [InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]]
+        await message.reply_text("🛡️ **Safety Check:**", reply_markup=InlineKeyboardMarkup(buttons))
 
-# 🔥 NEW: Handle Screenshot Callbacks
+# 🔥 HANDLERS FOR CALLBACKS
 @bot.on_callback_query(filters.regex("^ss_"))
 async def ss_cb(client, cb):
-    try:
-        action, uid_str = cb.data.rsplit("_", 1)
-        uid = int(uid_str)
+    try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
     except: return
-
     if uid != cb.from_user.id: return await cb.answer("Not for you!", show_alert=True)
-    
     if action == "ss_yes":
         user_conversations[uid]["state"] = "wait_screenshots"
         user_conversations[uid]["details"]["manual_screenshots"] = []
         await cb.message.edit_text("📸 **Send Screenshots now.**\n(Send photos one by one)")
-    
     elif action == "ss_no" or action == "ss_done":
-        # Proceed to next step (Language)
         user_conversations[uid]["state"] = "wait_lang"
         ss_count = len(user_conversations[uid]["details"].get("manual_screenshots", []))
         msg_text = f"✅ Saved {ss_count} screenshots." if action == "ss_done" else "⏭️ Screenshots Skipped."
@@ -906,50 +823,32 @@ async def ss_cb(client, cb):
 
 @bot.on_callback_query(filters.regex("^lnk_"))
 async def link_cb(client, cb):
-    try:
-        action, uid_str = cb.data.rsplit("_", 1)
-        uid = int(uid_str)
+    try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
     except: return
-    
     if uid != cb.from_user.id: return await cb.answer("Not for you!", show_alert=True)
-    
     if action == "lnk_yes":
         user_conversations[uid]["state"] = "wait_link_name"
         await cb.message.edit_text("📝 বাটনের নাম লিখুন (Ex: '720p Download'):")
     else:
         user_conversations[uid]["state"] = "wait_badge_text"
         btns = [[InlineKeyboardButton("🚫 Skip Badge (No Text)", callback_data=f"skip_badge_{uid}")]]
-        await cb.message.edit_text(
-            "🖼️ **পোস্টারে কোনো লেখা (Badge) বসাতে চান?**\n\n"
-            "উদাহরণ: `বাংলা ডাবিং`, `Hindi Dubbed`\n"
-            "_(ফেস ডিটেক্ট করে লেখাটি অটোমেটিক ফাঁকা জায়গায় বসানো হবে)_\n\n"
-            "👇 নিচে লিখে পাঠান অথবা Skip করুন:", 
-            reply_markup=InlineKeyboardMarkup(btns)
-        )
+        await cb.message.edit_text("🖼️ **পোস্টারে কোনো লেখা (Badge) বসাতে চান?**\n\nউদাহরণ: `বাংলা ডাবিং`, `Hindi Dubbed`\n_(ফেস ডিটেক্ট করে লেখাটি অটোমেটিক ফাঁকা জায়গায় বসানো হবে)_\n\n👇 নিচে লিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup(btns))
 
 @bot.on_callback_query(filters.regex("^skip_badge_"))
 async def skip_badge_cb(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
         user_conversations[uid]["details"]["badge_text"] = None
-        buttons = [
-            [InlineKeyboardButton("✅ Safe Content", callback_data=f"safe_yes_{uid}")],
-            [InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]
-        ]
+        buttons = [[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}")], [InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]]
         await cb.message.edit_text("🛡️ **Safety Check:**\nIs this content 18+/Adult?", reply_markup=InlineKeyboardMarkup(buttons))
 
 @bot.on_callback_query(filters.regex("^safe_"))
 async def safety_cb(client, cb):
-    try:
-        action, uid_str = cb.data.rsplit("_", 1)
-        uid = int(uid_str)
+    try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
     except: return
-
     if uid not in user_conversations: return
-    
     user_conversations[uid]["details"]["force_adult"] = True if action == "safe_no" else False
-    
-    await cb.message.edit_text("⏳ Generating Final Post...")
+    await cb.message.edit_text("⏳ Generating Final Post (Fetching Ads from DB)...")
     await generate_final_post(client, uid, cb.message)
 
 async def generate_final_post(client, uid, message):
@@ -957,47 +856,51 @@ async def generate_final_post(client, uid, message):
     convo = user_conversations[uid]
     
     loop = asyncio.get_running_loop()
-    
     img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
     
     if convo["details"].get("badge_text") and poster_bytes:
         new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
-        if new_poster_url:
-            convo["details"]["manual_poster_url"] = new_poster_url 
+        if new_poster_url: convo["details"]["manual_poster_url"] = new_poster_url 
     
-    my_ad_links = user_ad_links.get(uid, DEFAULT_AD_LINKS)
-    html = generate_html_code(convo["details"], convo["links"], my_ad_links)
+    my_ad_links = await get_user_ads(uid)
+    owner_ad_links = await get_owner_ads()
     
+    html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links)
     caption = generate_formatted_caption(convo["details"])
     convo["final"] = {"html": html}
     
     btns = [[InlineKeyboardButton("📄 Get Blogger Code", callback_data=f"get_code_{uid}")]]
     
     try:
+        # 1. Send to User
         if img_io:
             await client.send_photo(message.chat.id, img_io, caption=caption, reply_markup=InlineKeyboardMarkup(btns))
             await message.delete()
         else:
             await message.edit_text(caption, reply_markup=InlineKeyboardMarkup(btns))
+        
+        # 🔥 2. SEND TO LOG CHANNEL (Activity Monitor)
+        if LOG_CHANNEL_ID and LOG_CHANNEL_ID != 0 and img_io:
+            img_io.seek(0)
+            user_info = await client.get_users(uid)
+            log_caption = caption + f"\n\n👤 **Generated By:** {user_info.mention} (`{uid}`)\n🕒 **Time:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            await client.send_photo(LOG_CHANNEL_ID, img_io, caption=log_caption)
+            
     except Exception as e:
         logger.error(f"Post Send Error: {e}")
         await message.edit_text("❌ Error sending post.")
 
 @bot.on_callback_query(filters.regex("^get_code_"))
 async def get_code(client, cb):
-    try:
-        _, _, uid_str = cb.data.rsplit("_", 2)
-        uid = int(uid_str)
+    try: _, _, uid = cb.data.rsplit("_", 2); uid = int(uid)
     except: return
-
     data = user_conversations.get(uid, {})
     if "final" not in data: return await cb.answer("Expired.", show_alert=True)
     
     await cb.answer("⏳ Uploading to Dpaste...", show_alert=False)
     link = await create_paste_link(data["final"]["html"])
     
-    if link:
-        await cb.message.reply_text(f"✅ **Code Ready!**\n\n👇 Copy:\n{link}", disable_web_page_preview=True)
+    if link: await cb.message.reply_text(f"✅ **Code Ready!**\n\n👇 Copy:\n{link}", disable_web_page_preview=True)
     else:
         file = io.BytesIO(data["final"]["html"].encode())
         file.name = "blogger_post.html"
@@ -1013,5 +916,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Bot Started (v33 - 4x Upload System)!")
+    print("🚀 Ultimate Bot Started (v36)!")
     bot.run()
