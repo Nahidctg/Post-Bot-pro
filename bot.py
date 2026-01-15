@@ -8,6 +8,7 @@ import time
 import asyncio
 import logging
 import random
+import string
 import base64
 import datetime
 import aiohttp
@@ -64,6 +65,7 @@ try:
     users_col = db["users"]
     settings_col = db["settings"]
     user_settings_col = db["user_settings"]
+    posts_col = db["posts"] # 🔥 NEW: For Saving Posts
     logger.info("✅ MongoDB Connected Successfully!")
 except Exception as e:
     logger.critical(f"❌ MongoDB Connection Failed: {e}")
@@ -125,6 +127,27 @@ async def save_user_ads(user_id, links):
 async def get_all_users_count():
     return await users_col.count_documents({})
 
+# 🔥 NEW: Generate Short ID
+def generate_short_id():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# 🔥 NEW: Save Post Logic
+async def save_post_to_db(post_data, links):
+    pid = post_data.get("post_id")
+    if not pid:
+        pid = generate_short_id()
+        post_data["post_id"] = pid
+    
+    # Store everything needed to regenerate the post
+    save_data = {
+        "_id": pid,
+        "details": post_data,
+        "links": links,
+        "updated_at": datetime.datetime.now()
+    }
+    await posts_col.replace_one({"_id": pid}, save_data, upsert=True)
+    return pid
+
 # ---- RESOURCES URLS ----
 URL_FONT = "https://raw.githubusercontent.com/mahabub81/bangla-fonts/master/Kalpurush.ttf"
 URL_MODEL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
@@ -150,7 +173,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v37 Bot Running (Image Fix Applied)"
+    return "🤖 v38 Bot Running (Smart Edit System)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -224,7 +247,7 @@ def upload_image_core(file_content):
             return "https://graph.org" + json_data[0]["src"]
     except: pass
 
-    # Removed uguu.se and 0x0.st because they delete files after 24 hours
+    # Removed uguu.se and 0x0.st to prevent image expiration
     
     logger.error("❌ ALL PERMANENT UPLOAD SERVERS FAILED.")
     return None
@@ -462,7 +485,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v37) -->
+    <!-- Auto Redirect Code (v38) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
@@ -484,7 +507,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
     """
 
 # ---- IMAGE & CAPTION GENERATOR ----
-def generate_formatted_caption(data):
+def generate_formatted_caption(data, pid=None):
     title = data.get("title") or data.get("name") or "N/A"
     is_adult = data.get('adult', False) or data.get('force_adult', False)
     
@@ -500,7 +523,8 @@ def generate_formatted_caption(data):
         language = data.get('custom_language', '').title()
     
     overview = data.get("overview", "No plot available.")
-    caption = f"🎬 **{title} ({year})**\n\n"
+    caption = f"🎬 **{title} ({year})**\n"
+    if pid: caption += f"🆔 **ID:** `{pid}` (Use to Edit)\n\n"
     
     if is_adult:
         caption += "⚠️ **WARNING: 18+ Content.**\n_Suitable for mature audiences only._\n\n"
@@ -594,7 +618,7 @@ async def start_cmd(client, message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
 
-    await message.reply_text("🎬 **Movie & Series Bot (v37 Ultimate)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🛠 `/mysettings` - View Ad Links\n⚙️ `/setadlink <URL>` - Set Ad Links")
+    await message.reply_text("🎬 **Movie & Series Bot (v38 Ultimate)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🔄 `/edit <PostID>` - Add New Links\n🛠 `/mysettings` - View Ad Links")
 
 @bot.on_message(filters.command("auth") & filters.user(OWNER_ID))
 async def auth_user(client, message):
@@ -616,7 +640,8 @@ async def ban_user(client, message):
 @bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
 async def bot_stats(client, message):
     total = await get_all_users_count()
-    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n✅ **System:** Online\n🚀 **Version:** v37")
+    total_posts = await posts_col.count_documents({})
+    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n✅ **System:** Online\n🚀 **Version:** v38")
 
 @bot.on_message(filters.command("setownerads") & filters.user(OWNER_ID))
 async def set_owner_ads_cmd(client, message):
@@ -672,6 +697,39 @@ async def manual_post_cmd(client, message):
     user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots": []}, "links": [], "state": "manual_title" }
     await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:")
 
+# 🔥 NEW: EDIT COMMAND
+@bot.on_message(filters.command("edit") & filters.private)
+async def edit_post_cmd(client, message):
+    uid = message.from_user.id
+    if not await is_authorized(uid): return
+    
+    if len(message.command) < 2:
+        return await message.reply_text("⚠️ Usage: `/edit <PostID>`\n(Post ID আপনি পোস্ট জেনারেট করার সময় ক্যাপশনে পাবেন)")
+    
+    pid = message.command[1].strip()
+    post = await posts_col.find_one({"_id": pid})
+    if not post:
+        return await message.reply_text("❌ Post ID not found in database.")
+    
+    details = post.get("details")
+    current_links = post.get("links", [])
+    
+    # Start Edit Session
+    user_conversations[uid] = {
+        "details": details,
+        "links": current_links,
+        "state": "edit_mode",
+        "post_id": pid
+    }
+    
+    links_text = "\n".join([f"{i+1}. {l['label']}" for i, l in enumerate(current_links)])
+    msg = f"📝 **Editing:** {details.get('title')}\n🆔 **ID:** `{pid}`\n\n🔗 **Current Links:**\n{links_text}\n\n👇 **What to do?**"
+    
+    btns = [[InlineKeyboardButton("➕ Add New Link", callback_data=f"add_lnk_edit_{uid}")],
+            [InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]]
+    
+    await message.reply_text(msg, reply_markup=InlineKeyboardMarkup(btns))
+
 @bot.on_message(filters.command("post") & filters.private)
 async def post_cmd(client, message):
     uid = message.from_user.id
@@ -715,7 +773,7 @@ async def on_select(client, cb):
     except Exception as e: logger.error(f"Select Error: {e}")
 
 # ---- CONVERSATION HANDLER ----
-@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads"]))
+@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "edit", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads"]))
 async def text_handler(client, message):
     uid = message.from_user.id
     if uid not in user_conversations: return
@@ -784,9 +842,16 @@ async def text_handler(client, message):
     elif state == "wait_link_url":
         if text.startswith("http"):
             convo["links"].append({"label": convo["temp_name"], "url": text})
-            convo["state"] = "ask_links"
-            buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")], [InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
-            await message.reply_text(f"✅ Added! Total: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
+            # Check if it's edit mode
+            if convo.get("post_id"):
+                 convo["state"] = "edit_mode"
+                 btns = [[InlineKeyboardButton("➕ Add Another", callback_data=f"add_lnk_edit_{uid}")],
+                         [InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]]
+                 await message.reply_text(f"✅ Link Added!\n\nAdd another or Finish?", reply_markup=InlineKeyboardMarkup(btns))
+            else:
+                convo["state"] = "ask_links"
+                buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")], [InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
+                await message.reply_text(f"✅ Added! Total: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
         else: await message.reply_text("⚠️ Invalid URL.")
     
     elif state == "wait_badge_text":
@@ -823,6 +888,21 @@ async def link_cb(client, cb):
         btns = [[InlineKeyboardButton("🚫 Skip Badge (No Text)", callback_data=f"skip_badge_{uid}")]]
         await cb.message.edit_text("🖼️ **পোস্টারে কোনো লেখা (Badge) বসাতে চান?**\n\nউদাহরণ: `বাংলা ডাবিং`, `Hindi Dubbed`\n_(ফেস ডিটেক্ট করে লেখাটি অটোমেটিক ফাঁকা জায়গায় বসানো হবে)_\n\n👇 নিচে লিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup(btns))
 
+# 🔥 NEW: Edit Mode Callbacks
+@bot.on_callback_query(filters.regex("^add_lnk_edit_"))
+async def add_lnk_edit(client, cb):
+    uid = int(cb.data.split("_")[-1])
+    if uid in user_conversations:
+        user_conversations[uid]["state"] = "wait_link_name"
+        await cb.message.edit_text("📝 বাটনের নাম লিখুন (Ex: 'Ep 5 Download'):")
+
+@bot.on_callback_query(filters.regex("^gen_edit_"))
+async def gen_edit_finish(client, cb):
+    uid = int(cb.data.split("_")[-1])
+    if uid in user_conversations:
+        await cb.message.edit_text("⏳ Saving Changes & Generating Code...")
+        await generate_final_post(client, uid, cb.message)
+
 @bot.on_callback_query(filters.regex("^skip_badge_"))
 async def skip_badge_cb(client, cb):
     uid = int(cb.data.split("_")[-1])
@@ -844,6 +924,9 @@ async def generate_final_post(client, uid, message):
     if uid not in user_conversations: return await message.edit_text("❌ Session expired.")
     convo = user_conversations[uid]
     
+    # 🔥 Save/Update Post in DB
+    pid = await save_post_to_db(convo["details"], convo["links"])
+    
     loop = asyncio.get_running_loop()
     img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
     
@@ -855,7 +938,7 @@ async def generate_final_post(client, uid, message):
     owner_ad_links = await get_owner_ads()
     
     html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links)
-    caption = generate_formatted_caption(convo["details"])
+    caption = generate_formatted_caption(convo["details"], pid) # Pass PID
     convo["final"] = {"html": html}
     
     btns = [[InlineKeyboardButton("📄 Get Blogger Code", callback_data=f"get_code_{uid}")]]
@@ -905,5 +988,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Ultimate Bot Started (v37 - Image Fix)!")
+    print("🚀 Ultimate Bot Started (v38 - Smart Edit)!")
     bot.run()
