@@ -172,7 +172,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v39 Bot Running (Smart Search Added)"
+    return "🤖 v40 Bot Running (Fixed Edit Crash)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -480,7 +480,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v39) -->
+    <!-- Auto Redirect Code (v40) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
@@ -613,7 +613,7 @@ async def start_cmd(client, message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
 
-    await message.reply_text("🎬 **Movie & Series Bot (v39 Ultimate)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🔄 `/edit <Name/ID>` - Edit by Name!\n📜 `/history` - View your posts")
+    await message.reply_text("🎬 **Movie & Series Bot (v40 Stable)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🔄 `/edit <Name/ID>` - Edit by Name!\n📜 `/history` - View your posts")
 
 @bot.on_message(filters.command("auth") & filters.user(OWNER_ID))
 async def auth_user(client, message):
@@ -636,7 +636,7 @@ async def ban_user(client, message):
 async def bot_stats(client, message):
     total = await get_all_users_count()
     total_posts = await posts_col.count_documents({})
-    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n✅ **System:** Online\n🚀 **Version:** v39")
+    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n✅ **System:** Online\n🚀 **Version:** v40")
 
 @bot.on_message(filters.command("setownerads") & filters.user(OWNER_ID))
 async def set_owner_ads_cmd(client, message):
@@ -711,7 +711,7 @@ async def history_cmd(client, message):
     
     await message.reply_text(text)
 
-# 🔥 NEW: SMART EDIT COMMAND (Search by Name)
+# 🔥 UPDATED: SMART EDIT COMMAND (Fixes Search & Reply)
 @bot.on_message(filters.command("edit") & filters.private)
 async def edit_post_cmd(client, message):
     uid = message.from_user.id
@@ -721,34 +721,42 @@ async def edit_post_cmd(client, message):
         return await message.reply_text("⚠️ Usage: `/edit <Name OR ID>`\nExample: `/edit Avatar`")
     
     query = message.text.split(" ", 1)[1].strip()
+    msg = await message.reply_text(f"🔍 Searching for `{query}`...")
     
-    # 1. Try Exact ID Match
-    post = await posts_col.find_one({"_id": query})
-    
-    # 2. Try Title Search (Case Insensitive)
-    if not post:
-        cursor = posts_col.find({"details.title": {"$regex": query, "$options": "i"}})
-        results = await cursor.to_list(length=10)
+    try:
+        # 1. Try Exact ID Match
+        post = await posts_col.find_one({"_id": query})
         
-        # Try "name" for Series
-        if not results:
-            cursor = posts_col.find({"details.name": {"$regex": query, "$options": "i"}})
+        # 2. Try Title Search (Case Insensitive)
+        if not post:
+            cursor = posts_col.find({"details.title": {"$regex": query, "$options": "i"}})
             results = await cursor.to_list(length=10)
             
-        if not results: return await message.reply_text("❌ No posts found with that name.")
-        
-        if len(results) > 1:
-            btns = []
-            for r in results:
-                title = r["details"].get("title") or r["details"].get("name")
-                pid = r["_id"]
-                btns.append([InlineKeyboardButton(f"{title} ({pid})", callback_data=f"forcedit_{pid}_{uid}")])
-            return await message.reply_text("👇 **Select Post to Edit:**", reply_markup=InlineKeyboardMarkup(btns))
-        
-        post = results[0] # Exact one match
+            # Try "name" for Series
+            if not results:
+                cursor = posts_col.find({"details.name": {"$regex": query, "$options": "i"}})
+                results = await cursor.to_list(length=10)
+                
+            if not results: 
+                return await msg.edit_text("❌ No posts found with that name/ID.\nMake sure you have saved it at least once.")
+            
+            if len(results) > 1:
+                btns = []
+                for r in results:
+                    title = r["details"].get("title") or r["details"].get("name")
+                    pid = r["_id"]
+                    btns.append([InlineKeyboardButton(f"{title} ({pid})", callback_data=f"forcedit_{pid}_{uid}")])
+                return await msg.edit_text("👇 **Select Post to Edit:**", reply_markup=InlineKeyboardMarkup(btns))
+            
+            post = results[0] # Exact one match
 
-    # Start Edit Session
-    start_edit_session(uid, post, message)
+        # Start Edit Session
+        await msg.delete() # Delete searching message
+        await start_edit_session(uid, post, message)
+        
+    except Exception as e:
+        logger.error(f"Search Error: {e}")
+        await msg.edit_text("❌ An error occurred while searching.")
 
 async def start_edit_session(uid, post, message):
     details = post.get("details")
@@ -948,7 +956,7 @@ async def add_lnk_edit(client, cb):
 async def gen_edit_finish(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
-        await cb.message.edit_text("⏳ Saving Changes & Generating Code...")
+        await cb.answer("⏳ Generating New Post...", show_alert=False)
         await generate_final_post(client, uid, cb.message)
 
 @bot.on_callback_query(filters.regex("^skip_badge_"))
@@ -968,47 +976,73 @@ async def safety_cb(client, cb):
     await cb.message.edit_text("⏳ Generating Final Post (Fetching Ads from DB)...")
     await generate_final_post(client, uid, cb.message)
 
+# 🔥 UPDATED: Generate Final Post (Crash Fix)
 async def generate_final_post(client, uid, message):
-    if uid not in user_conversations: return await message.edit_text("❌ Session expired.")
+    if uid not in user_conversations: 
+        try: return await message.edit_text("❌ Session expired. Try again.")
+        except: return
+
     convo = user_conversations[uid]
     
-    # 🔥 Save/Update Post in DB
-    pid = await save_post_to_db(convo["details"], convo["links"])
-    
-    loop = asyncio.get_running_loop()
-    img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
-    
-    if convo["details"].get("badge_text") and poster_bytes:
-        new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
-        if new_poster_url: convo["details"]["manual_poster_url"] = new_poster_url 
-    
-    my_ad_links = await get_user_ads(uid)
-    owner_ad_links = await get_owner_ads()
-    
-    html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links)
-    caption = generate_formatted_caption(convo["details"], pid) # Pass PID
-    convo["final"] = {"html": html}
-    
-    btns = [[InlineKeyboardButton("📄 Get Blogger Code", callback_data=f"get_code_{uid}")]]
-    
+    # Send loading status
     try:
-        # 1. Send to User
+        status_msg = await message.edit_text("⏳ **Generating Post...**\nPlease wait while we process images & links.")
+    except:
+        status_msg = message # Fallback
+
+    try:
+        # 🔥 Save/Update Post in DB
+        pid = await save_post_to_db(convo["details"], convo["links"])
+        
+        loop = asyncio.get_running_loop()
+        
+        # Image Generation (Safe execution)
+        img_io = None
+        poster_bytes = None
+        try:
+            img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
+        except Exception as e:
+            logger.error(f"Image Gen Failed: {e}")
+
+        # Update Poster URL if new badge applied
+        if convo["details"].get("badge_text") and poster_bytes:
+            new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
+            if new_poster_url: convo["details"]["manual_poster_url"] = new_poster_url 
+        
+        my_ad_links = await get_user_ads(uid)
+        owner_ad_links = await get_owner_ads()
+        
+        html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links)
+        caption = generate_formatted_caption(convo["details"], pid)
+        convo["final"] = {"html": html}
+        
+        btns = [[InlineKeyboardButton("📄 Get Blogger Code", callback_data=f"get_code_{uid}")]]
+        
+        # 1. Send Result to User
         if img_io:
             await client.send_photo(message.chat.id, img_io, caption=caption, reply_markup=InlineKeyboardMarkup(btns))
-            await message.delete()
+            # Delete status message
+            try: await status_msg.delete()
+            except: pass
         else:
-            await message.edit_text(caption, reply_markup=InlineKeyboardMarkup(btns))
+            await client.send_message(message.chat.id, caption, reply_markup=InlineKeyboardMarkup(btns))
+            try: await status_msg.delete()
+            except: pass
         
-        # 🔥 2. SEND TO LOG CHANNEL (Activity Monitor)
+        # 🔥 2. SEND TO LOG CHANNEL
         if LOG_CHANNEL_ID and LOG_CHANNEL_ID != 0 and img_io:
             img_io.seek(0)
             user_info = await client.get_users(uid)
             log_caption = caption + f"\n\n👤 **Generated By:** {user_info.mention} (`{uid}`)\n🕒 **Time:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            await client.send_photo(LOG_CHANNEL_ID, img_io, caption=log_caption)
+            try: await client.send_photo(LOG_CHANNEL_ID, img_io, caption=log_caption)
+            except: pass
             
     except Exception as e:
-        logger.error(f"Post Send Error: {e}")
-        await message.edit_text("❌ Error sending post.")
+        logger.error(f"Post Generation Critical Error: {e}")
+        try:
+            await status_msg.edit_text(f"❌ **Error:** Something went wrong.\n`{str(e)}`")
+        except:
+            await client.send_message(message.chat.id, f"❌ **Error:** Something went wrong during post generation.\n`{str(e)}`")
 
 @bot.on_callback_query(filters.regex("^get_code_"))
 async def get_code(client, cb):
@@ -1036,5 +1070,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Ultimate Bot Started (v39 - Search & History)!")
+    print("🚀 Ultimate Bot Started (v40 - Stable Edit)!")
     bot.run()
