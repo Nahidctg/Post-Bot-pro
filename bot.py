@@ -65,7 +65,7 @@ try:
     users_col = db["users"]
     settings_col = db["settings"]
     user_settings_col = db["user_settings"]
-    posts_col = db["posts"] # 🔥 NEW: For Saving Posts
+    posts_col = db["posts"] 
     logger.info("✅ MongoDB Connected Successfully!")
 except Exception as e:
     logger.critical(f"❌ MongoDB Connection Failed: {e}")
@@ -127,18 +127,17 @@ async def save_user_ads(user_id, links):
 async def get_all_users_count():
     return await users_col.count_documents({})
 
-# 🔥 NEW: Generate Short ID
+# 🔥 Generate Short ID
 def generate_short_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# 🔥 NEW: Save Post Logic
+# 🔥 Save Post Logic
 async def save_post_to_db(post_data, links):
     pid = post_data.get("post_id")
     if not pid:
         pid = generate_short_id()
         post_data["post_id"] = pid
     
-    # Store everything needed to regenerate the post
     save_data = {
         "_id": pid,
         "details": post_data,
@@ -173,7 +172,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v38 Bot Running (Smart Edit System)"
+    return "🤖 v39 Bot Running (Smart Search Added)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -223,10 +222,9 @@ def get_font(size=60, bold=False):
         return ImageFont.load_default()
 
 # ====================================================================
-# 🔥 ULTRA POWERFUL UPLOAD FUNCTION (Fixed: Permanent Hosting Only)
+# 🔥 UPLOAD FUNCTION (Permanent Only)
 # ====================================================================
 def upload_image_core(file_content):
-    # 1. Try Catbox.moe (Permanent)
     try:
         url = "https://catbox.moe/user/api.php"
         data = {"reqtype": "fileupload", "userhash": ""}
@@ -236,7 +234,6 @@ def upload_image_core(file_content):
         if response.status_code == 200: return response.text.strip()
     except: pass
 
-    # 2. Try Graph.org (Permanent)
     try:
         url = "https://graph.org/upload"
         files = {'file': ('image.jpg', file_content, 'image/jpeg')}
@@ -247,8 +244,6 @@ def upload_image_core(file_content):
             return "https://graph.org" + json_data[0]["src"]
     except: pass
 
-    # Removed uguu.se and 0x0.st to prevent image expiration
-    
     logger.error("❌ ALL PERMANENT UPLOAD SERVERS FAILED.")
     return None
 
@@ -485,7 +480,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v38) -->
+    <!-- Auto Redirect Code (v39) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
@@ -618,7 +613,7 @@ async def start_cmd(client, message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
 
-    await message.reply_text("🎬 **Movie & Series Bot (v38 Ultimate)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🔄 `/edit <PostID>` - Add New Links\n🛠 `/mysettings` - View Ad Links")
+    await message.reply_text("🎬 **Movie & Series Bot (v39 Ultimate)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🔄 `/edit <Name/ID>` - Edit by Name!\n📜 `/history` - View your posts")
 
 @bot.on_message(filters.command("auth") & filters.user(OWNER_ID))
 async def auth_user(client, message):
@@ -641,7 +636,7 @@ async def ban_user(client, message):
 async def bot_stats(client, message):
     total = await get_all_users_count()
     total_posts = await posts_col.count_documents({})
-    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n✅ **System:** Online\n🚀 **Version:** v38")
+    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n✅ **System:** Online\n🚀 **Version:** v39")
 
 @bot.on_message(filters.command("setownerads") & filters.user(OWNER_ID))
 async def set_owner_ads_cmd(client, message):
@@ -697,24 +692,69 @@ async def manual_post_cmd(client, message):
     user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots": []}, "links": [], "state": "manual_title" }
     await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:")
 
-# 🔥 NEW: EDIT COMMAND
+# 🔥 NEW: HISTORY COMMAND
+@bot.on_message(filters.command("history") & filters.private)
+async def history_cmd(client, message):
+    uid = message.from_user.id
+    if not await is_authorized(uid): return
+
+    cursor = posts_col.find({}).sort("updated_at", -1).limit(10)
+    posts = await cursor.to_list(length=10)
+    
+    if not posts: return await message.reply_text("❌ No history found.")
+    
+    text = "📜 **Your Last 10 Posts:**\n\n"
+    for p in posts:
+        title = p["details"].get("title") or p["details"].get("name") or "Unknown"
+        pid = p["_id"]
+        text += f"🎬 **{title}**\n🆔 `{pid}`\n\n"
+    
+    await message.reply_text(text)
+
+# 🔥 NEW: SMART EDIT COMMAND (Search by Name)
 @bot.on_message(filters.command("edit") & filters.private)
 async def edit_post_cmd(client, message):
     uid = message.from_user.id
     if not await is_authorized(uid): return
     
     if len(message.command) < 2:
-        return await message.reply_text("⚠️ Usage: `/edit <PostID>`\n(Post ID আপনি পোস্ট জেনারেট করার সময় ক্যাপশনে পাবেন)")
+        return await message.reply_text("⚠️ Usage: `/edit <Name OR ID>`\nExample: `/edit Avatar`")
     
-    pid = message.command[1].strip()
-    post = await posts_col.find_one({"_id": pid})
+    query = message.text.split(" ", 1)[1].strip()
+    
+    # 1. Try Exact ID Match
+    post = await posts_col.find_one({"_id": query})
+    
+    # 2. Try Title Search (Case Insensitive)
     if not post:
-        return await message.reply_text("❌ Post ID not found in database.")
-    
+        cursor = posts_col.find({"details.title": {"$regex": query, "$options": "i"}})
+        results = await cursor.to_list(length=10)
+        
+        # Try "name" for Series
+        if not results:
+            cursor = posts_col.find({"details.name": {"$regex": query, "$options": "i"}})
+            results = await cursor.to_list(length=10)
+            
+        if not results: return await message.reply_text("❌ No posts found with that name.")
+        
+        if len(results) > 1:
+            btns = []
+            for r in results:
+                title = r["details"].get("title") or r["details"].get("name")
+                pid = r["_id"]
+                btns.append([InlineKeyboardButton(f"{title} ({pid})", callback_data=f"forcedit_{pid}_{uid}")])
+            return await message.reply_text("👇 **Select Post to Edit:**", reply_markup=InlineKeyboardMarkup(btns))
+        
+        post = results[0] # Exact one match
+
+    # Start Edit Session
+    start_edit_session(uid, post, message)
+
+async def start_edit_session(uid, post, message):
     details = post.get("details")
     current_links = post.get("links", [])
+    pid = post.get("_id")
     
-    # Start Edit Session
     user_conversations[uid] = {
         "details": details,
         "links": current_links,
@@ -723,12 +763,20 @@ async def edit_post_cmd(client, message):
     }
     
     links_text = "\n".join([f"{i+1}. {l['label']}" for i, l in enumerate(current_links)])
-    msg = f"📝 **Editing:** {details.get('title')}\n🆔 **ID:** `{pid}`\n\n🔗 **Current Links:**\n{links_text}\n\n👇 **What to do?**"
+    msg_txt = f"📝 **Editing:** {details.get('title') or details.get('name')}\n🆔 **ID:** `{pid}`\n\n🔗 **Current Links:**\n{links_text}\n\n👇 **What to do?**"
     
     btns = [[InlineKeyboardButton("➕ Add New Link", callback_data=f"add_lnk_edit_{uid}")],
             [InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]]
     
-    await message.reply_text(msg, reply_markup=InlineKeyboardMarkup(btns))
+    if isinstance(message, Message): await message.reply_text(msg_txt, reply_markup=InlineKeyboardMarkup(btns))
+    else: await message.edit_text(msg_txt, reply_markup=InlineKeyboardMarkup(btns))
+
+@bot.on_callback_query(filters.regex("^forcedit_"))
+async def force_edit_cb(client, cb):
+    try: _, pid, uid = cb.data.split("_"); uid = int(uid)
+    except: return
+    post = await posts_col.find_one({"_id": pid})
+    if post: await start_edit_session(uid, post, cb.message)
 
 @bot.on_message(filters.command("post") & filters.private)
 async def post_cmd(client, message):
@@ -773,7 +821,7 @@ async def on_select(client, cb):
     except Exception as e: logger.error(f"Select Error: {e}")
 
 # ---- CONVERSATION HANDLER ----
-@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "edit", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads"]))
+@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads"]))
 async def text_handler(client, message):
     uid = message.from_user.id
     if uid not in user_conversations: return
@@ -988,5 +1036,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Ultimate Bot Started (v38 - Smart Edit)!")
+    print("🚀 Ultimate Bot Started (v39 - Search & History)!")
     bot.run()
