@@ -73,9 +73,8 @@ except Exception as e:
 
 # ---- DEFAULT SETTINGS ----
 DEFAULT_OWNER_AD_LINKS = [
-    "https://www.effectivegatecpm.com/c90zejmfrg?key=45a67d2f1523ee6b3988c4cc8f764a35",
-    "https://www.effectivegatecpm.com/q5cpmxwy44?key=075b9f116b4174922cadfae2d3291743",
-    "https://www.effectivegatecpm.com/p4bm30ss3?key=8bb102e9258871570c79a9a90fa3cf9f"
+    "https://www.google.com",
+    "https://www.bing.com"
 ]
 DEFAULT_USER_AD_LINKS = ["https://www.google.com", "https://www.bing.com"] 
 
@@ -110,6 +109,18 @@ async def set_owner_ads_db(links):
     await settings_col.update_one(
         {"_id": "main_config"}, 
         {"$set": {"owner_ads": links}}, 
+        upsert=True
+    )
+
+# 🔥 REVENUE SHARE FUNCTIONS
+async def get_admin_share():
+    data = await settings_col.find_one({"_id": "main_config"})
+    return data.get("admin_share_percent", 20) if data else 20
+
+async def set_admin_share_db(percent):
+    await settings_col.update_one(
+        {"_id": "main_config"}, 
+        {"$set": {"admin_share_percent": int(percent)}}, 
         upsert=True
     )
 
@@ -172,7 +183,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v40 Bot Running (Fixed Edit Crash)"
+    return "🤖 v42 Bot Running (Bengali Help Added)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -370,7 +381,7 @@ def apply_badge_to_poster(poster_bytes, text):
 # ============================================================================
 # 🔥 HTML GENERATOR
 # ============================================================================
-def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
+def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, admin_share_percent=20):
     title = data.get("title") or data.get("name")
     overview = data.get("overview", "")
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
@@ -418,10 +429,26 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
             <div id="area-{idx}"><button class="rgb-btn" onclick="secureLink(this, '{encoded_url}', 'area-{idx}')">🔒 SECURE DOWNLOAD</button></div>
         </div>"""
 
-    final_ad_list = list(user_ad_links_list)
-    if owner_ad_links_list: final_ad_list.extend(owner_ad_links_list)
-    random.shuffle(final_ad_list) 
-    if not final_ad_list: final_ad_list = ["https://google.com"]
+    # 🔥 REVENUE SHARE LOGIC 🔥
+    weighted_ad_list = []
+    
+    if not user_ad_links_list:
+        weighted_ad_list = owner_ad_links_list if owner_ad_links_list else ["https://google.com"]
+    elif not owner_ad_links_list:
+        weighted_ad_list = user_ad_links_list
+    else:
+        total_slots = 100
+        admin_slots = int(admin_share_percent)
+        user_slots = total_slots - admin_slots
+        
+        for _ in range(admin_slots):
+            weighted_ad_list.append(random.choice(owner_ad_links_list))
+            
+        for _ in range(user_slots):
+            weighted_ad_list.append(random.choice(user_ad_links_list))
+    
+    random.shuffle(weighted_ad_list) 
+    # 🔥 END LOGIC 🔥
 
     style_html = """
     <style>
@@ -448,7 +475,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
 
     script_html = f"""
     <script>
-    const AD_LINKS = {json.dumps(final_ad_list)};
+    const AD_LINKS = {json.dumps(weighted_ad_list)};
     function toggleBlur(el) {{
         el.classList.toggle('blur-active');
         let wrapper = el.parentElement;
@@ -480,7 +507,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list):
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v40) -->
+    <!-- Auto Redirect Code (v42 Shared) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
@@ -596,6 +623,8 @@ except Exception as e:
     exit(1)
 
 # ---- BOT COMMANDS ----
+
+# 🔥 UPDATED START COMMAND WITH BENGALI TUTORIAL
 @bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     uid = message.from_user.id
@@ -606,14 +635,37 @@ async def start_cmd(client, message):
     
     # 🔥 Check Auth
     if not await is_authorized(uid):
-        # 🔥 Added Contact Button
         btn = [[InlineKeyboardButton("💬 Contact Admin", url=f"https://t.me/{OWNER_USERNAME}")]]
         return await message.reply_text(
-            "⚠️ **ACCESS DENIED**\n\nYou need admin approval to use this bot.\nContact Owner.",
+            "⚠️ **অ্যাক্সেস নেই (Access Denied)**\n\nএই বটটি ব্যবহার করতে এডমিনের অনুমতির প্রয়োজন।\nদয়া করে এডমিনের সাথে যোগাযোগ করুন।",
             reply_markup=InlineKeyboardMarkup(btn)
         )
 
-    await message.reply_text("🎬 **Movie & Series Bot (v40 Stable)**\n✨ **Status:** Authorized User ✅\n\n⚡ `/post <Link or Name>` - Auto Post\n✍️ `/manual` - Custom Post\n🔄 `/edit <Name/ID>` - Edit by Name!\n📜 `/history` - View your posts")
+    # 🇧🇩 বিস্তারিত বাংলা নির্দেশনা
+    welcome_text = (
+        f"👋 **স্বাগতম {name}!**\n\n"
+        "🎬 **Movie & Series Bot (v42)**-এ আপনাকে স্বাগতম।\n"
+        "নিচে বটের ব্যবহারের নিয়মাবলী দেওয়া হলো:\n\n"
+        "📌 **কিভাবে ব্যবহার করবেন?**\n\n"
+        "1️⃣ **অটোমেটিক পোস্ট (Auto Post):**\n"
+        "যেকোনো মুভি বা সিরিজ খুঁজতে লিখুন:\n"
+        "👉 `/post <নাম>` (যেমন: `/post Avatar`)\n\n"
+        "2️⃣ **ম্যানুয়াল পোস্ট (Manual Post):**\n"
+        "মুভি খুঁজে না পেলে বা নিজের মতো বানাতে:\n"
+        "👉 `/manual`\n\n"
+        "3️⃣ **ইনকাম সেটআপ (Ad Setup):**\n"
+        "আপনার নিজের ডিরেক্ট লিংক সেট করতে:\n"
+        "👉 `/setadlink <আপনার লিংক>`\n"
+        "_(একসাথে একাধিক লিংক দিতে স্পেস ব্যবহার করুন)_\n\n"
+        "4️⃣ **পোস্ট এডিট (Edit):**\n"
+        "পুরানো পোস্ট এডিট করতে:\n"
+        "👉 `/edit <নাম বা ID>`\n\n"
+        "5️⃣ **হিস্টোরি (History):**\n"
+        "আপনার তৈরি করা শেষ ১০টি পোস্ট দেখতে:\n"
+        "👉 `/history`\n\n"
+        "🚀 **শুরু করতে যেকোনো একটি কমান্ড দিন!**"
+    )
+    await message.reply_text(welcome_text)
 
 @bot.on_message(filters.command("auth") & filters.user(OWNER_ID))
 async def auth_user(client, message):
@@ -621,7 +673,7 @@ async def auth_user(client, message):
         target_id = int(message.command[1])
         await users_col.update_one({"_id": target_id}, {"$set": {"authorized": True, "banned": False}}, upsert=True)
         await message.reply_text(f"✅ User {target_id} is now **AUTHORIZED**.")
-        await client.send_message(target_id, "✅ **Congratulations!** You have been authorized to use the bot.")
+        await client.send_message(target_id, "✅ **অভিনন্দন!** আপনাকে বট ব্যবহারের অনুমতি দেওয়া হয়েছে।\nএখন `/start` দিয়ে নিয়মাবলী দেখে নিন।")
     except: await message.reply_text("❌ Usage: `/auth 123456789`")
 
 @bot.on_message(filters.command("ban") & filters.user(OWNER_ID))
@@ -636,7 +688,8 @@ async def ban_user(client, message):
 async def bot_stats(client, message):
     total = await get_all_users_count()
     total_posts = await posts_col.count_documents({})
-    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n✅ **System:** Online\n🚀 **Version:** v40")
+    admin_share = await get_admin_share()
+    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n💰 **Admin Share:** {admin_share}%\n✅ **System:** Online")
 
 @bot.on_message(filters.command("setownerads") & filters.user(OWNER_ID))
 async def set_owner_ads_cmd(client, message):
@@ -648,6 +701,21 @@ async def set_owner_ads_cmd(client, message):
             await message.reply_text(f"✅ **Owner Ads Updated!** ({len(valid)} links)")
         else: await message.reply_text("❌ Invalid Links.")
     else: await message.reply_text("⚠️ Usage: `/setownerads link1 link2`")
+
+@bot.on_message(filters.command("setshare") & filters.user(OWNER_ID))
+async def set_share_cmd(client, message):
+    try:
+        if len(message.command) < 2:
+            return await message.reply_text("⚠️ Usage: `/setshare 20`\n(Sets Admin traffic to 20%, User to 80%)")
+        
+        percent = int(message.command[1])
+        if 0 <= percent <= 100:
+            await set_admin_share_db(percent)
+            await message.reply_text(f"✅ **Revenue Share Updated!**\n\n👮 Admin Traffic: **{percent}%**\n👤 User Traffic: **{100-percent}%**")
+        else:
+            await message.reply_text("⚠️ Please enter a number between 0 and 100.")
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {e}")
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_msg(client, message):
@@ -692,7 +760,6 @@ async def manual_post_cmd(client, message):
     user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots": []}, "links": [], "state": "manual_title" }
     await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:")
 
-# 🔥 NEW: HISTORY COMMAND
 @bot.on_message(filters.command("history") & filters.private)
 async def history_cmd(client, message):
     uid = message.from_user.id
@@ -711,7 +778,6 @@ async def history_cmd(client, message):
     
     await message.reply_text(text)
 
-# 🔥 UPDATED: SMART EDIT COMMAND (Fixes Search & Reply)
 @bot.on_message(filters.command("edit") & filters.private)
 async def edit_post_cmd(client, message):
     uid = message.from_user.id
@@ -829,7 +895,7 @@ async def on_select(client, cb):
     except Exception as e: logger.error(f"Select Error: {e}")
 
 # ---- CONVERSATION HANDLER ----
-@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads"]))
+@bot.on_message(filters.private & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare"]))
 async def text_handler(client, message):
     uid = message.from_user.id
     if uid not in user_conversations: return
@@ -973,10 +1039,10 @@ async def safety_cb(client, cb):
     except: return
     if uid not in user_conversations: return
     user_conversations[uid]["details"]["force_adult"] = True if action == "safe_no" else False
-    await cb.message.edit_text("⏳ Generating Final Post (Fetching Ads from DB)...")
+    await cb.message.edit_text("⏳ Generating Final Post...")
     await generate_final_post(client, uid, cb.message)
 
-# 🔥 UPDATED: Generate Final Post (Crash Fix)
+# 🔥 UPDATED: Generate Final Post (WITH REVENUE SHARE LOGIC)
 async def generate_final_post(client, uid, message):
     if uid not in user_conversations: 
         try: return await message.edit_text("❌ Session expired. Try again.")
@@ -986,7 +1052,7 @@ async def generate_final_post(client, uid, message):
     
     # Send loading status
     try:
-        status_msg = await message.edit_text("⏳ **Generating Post...**\nPlease wait while we process images & links.")
+        status_msg = await message.edit_text("⏳ **Generating Post...**\nChecking ad configuration...")
     except:
         status_msg = message # Fallback
 
@@ -1009,10 +1075,13 @@ async def generate_final_post(client, uid, message):
             new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
             if new_poster_url: convo["details"]["manual_poster_url"] = new_poster_url 
         
+        # 🔥 REVENUE SHARE FETCH
         my_ad_links = await get_user_ads(uid)
         owner_ad_links = await get_owner_ads()
+        admin_share = await get_admin_share()
         
-        html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links)
+        # Pass share to HTML generator
+        html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links, admin_share)
         caption = generate_formatted_caption(convo["details"], pid)
         convo["final"] = {"html": html}
         
@@ -1033,7 +1102,7 @@ async def generate_final_post(client, uid, message):
         if LOG_CHANNEL_ID and LOG_CHANNEL_ID != 0 and img_io:
             img_io.seek(0)
             user_info = await client.get_users(uid)
-            log_caption = caption + f"\n\n👤 **Generated By:** {user_info.mention} (`{uid}`)\n🕒 **Time:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            log_caption = caption + f"\n\n👤 **Generated By:** {user_info.mention} (`{uid}`)\n💰 **Admin Share:** {admin_share}%\n🕒 **Time:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
             try: await client.send_photo(LOG_CHANNEL_ID, img_io, caption=log_caption)
             except: pass
             
@@ -1070,5 +1139,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Ultimate Bot Started (v40 - Stable Edit)!")
+    print("🚀 Ultimate Bot Started (v42 - Bengali Instructions + Revenue Share)!")
     bot.run()
