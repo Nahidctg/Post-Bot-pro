@@ -1000,8 +1000,8 @@ async def on_select(client, cb):
     except Exception as e: logger.error(f"Select Error: {e}")
 
 # ---- CONVERSATION HANDLER (MODIFIED FOR FILE STORE) ----
-# 🔥 Filters updated to accept VIDEO & DOCUMENT for File Store
-@bot.on_message(filters.private & (filters.text | filters.video | filters.document) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel"]))
+# 🔥 Filters updated to accept VIDEO & DOCUMENT for File Store & PHOTO for Manual Uploads
+@bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel"]))
 async def text_handler(client, message):
     uid = message.from_user.id
     if uid not in user_conversations: return
