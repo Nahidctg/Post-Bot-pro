@@ -458,7 +458,7 @@ def apply_badge_to_poster(poster_bytes, text):
     except: return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 ADVANCED HTML GENERATOR (STREAMING + MULTI SERVER UI)
+# 🔥 ADVANCED HTML GENERATOR (SINGLE PAGE APP UI)
 # ============================================================================
 def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, admin_share_percent=20):
     title = data.get("title") or data.get("name")
@@ -473,86 +473,32 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         genres_list = [g['name'] for g in data.get('genres',[])]
         genres_str = ", ".join(genres_list) if genres_list else "Movie"
 
-    meta_html = f"""
-    <!-- HIDDEN METADATA -->
-    <div style="display:none;" id="meta-genre">{genres_str}</div>
-    <div style="display:none;" id="meta-language">{lang_str}</div>
-    """
-
-    ss_html = ""
-    if data.get('manual_screenshots'):
-        for ss_url in data['manual_screenshots']:
-            blur_class = "blur-content" if is_adult else ""
-            ss_html += f'<div class="ss-wrapper"><img src="{ss_url}" class="neon-ss {blur_class}" onclick="toggleBlur(this)" alt="Screenshot"></div>'
-    elif not data.get('is_manual') and data.get("images"):
-        backdrops = data["images"].get("backdrops",[])
-        count = 0
-        for bd in backdrops:
-            if count >= 4: break
-            if bd.get('aspect_ratio', 1.7) > 1.2: 
-                ss_url = f"https://image.tmdb.org/t/p/w780{bd['file_path']}"
-                blur_class = "blur-content" if is_adult else ""
-                ss_html += f'<div class="ss-wrapper"><img src="{ss_url}" class="neon-ss {blur_class}" onclick="toggleBlur(this)" alt="Screenshot"></div>'
-                count += 1
-    
-    ss_section = ""
-    if ss_html:
-        ss_section = f"""<div class="ss-container"><h3 style="color: #ff00de; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ff00de; display: inline-block;">📸 SCREENSHOTS</h3>{ss_html}</div>"""
-
-    # 🔥 STREAMING & MULTI DOWNLOAD UI GENERATION (NEW GRID DESIGN)
-    links_html = ""
+    # 🔥 GENERATE SERVER LIST (HIDDEN INITIALLY)
+    server_list_html = ""
     for idx, link in enumerate(links):
-        label = link['label']
-        
         if link.get("is_grouped"):
-            btn_html = ""
-            # GoFile Link for Streaming (Full Width)
             if link.get('gofile_url'):
                 go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-stream full-width" onclick="secureLink(this, \'{go_b64}\')"><span class="btn-text">▶️ Watch Online (স্ট্রিমিং)</span> <span class="badge">No Buffering</span></button>'
-
-            # Download Buttons (Grid Columns)
-            tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
-            btn_html += f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span class="btn-text">✈️ Telegram File</span> <span class="badge badge-blue">100% Safe</span></button>'
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ Watch Online (স্ট্রিমিং)</button>'
             
-            # 🔥 আপডেট করা বাটনের নাম (Fast Server 1 এবং Backup Server)
+            tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
+            server_list_html += f'<button class="final-server-btn tg-btn" onclick="goToLink(\'{tg_b64}\')">✈️ Telegram Fast Server</button>'
+            
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span class="btn-text">☁️ Fast Server 1</span> <span class="badge">Turbo</span></button>'
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{px_b64}\')">☁️ Cloud Download 1</button>'
 
             if link.get('oshi_url'):
                 os_b64 = base64.b64encode(link['oshi_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-oshi" onclick="secureLink(this, \'{os_b64}\')"><span class="btn-text">🚀 Backup Server</span> <span class="badge badge-blue">Stable</span></button>'
-                
-            links_html += f"""
-            <div class="pro-dl-box">
-                <div class="pro-dl-header">
-                    <span class="pro-title">📥 {label}</span>
-                    <span class="pro-status">● Live Active</span>
-                </div>
-                <div class="pro-btn-grid">
-                    {btn_html}
-                </div>
-            </div>"""
-                
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{os_b64}\')">🚀 Backup Server</button>'
         else:
-            # Manual Links
             url_str = link.get('url', '')
             encoded_url = base64.b64encode(url_str.encode('utf-8')).decode('utf-8')
-            links_html += f"""
-            <div class="pro-dl-box">
-                <div class="pro-dl-header">
-                    <span class="pro-title">🔗 {label}</span>
-                    <span class="pro-status">● Direct Link</span>
-                </div>
-                <div class="pro-btn-grid">
-                    <button class="srv-btn srv-tg full-width" onclick="secureLink(this, '{encoded_url}')"><span class="btn-text">📥 Download Link</span> <span class="badge badge-blue">Direct</span></button>
-                </div>
-            </div>"""
+            label = link.get('label', 'Download Link')
+            server_list_html += f'<button class="final-server-btn tg-btn" onclick="goToLink(\'{encoded_url}\')">📥 {label}</button>'
 
     # 🔥 REVENUE SHARE LOGIC 🔥
     weighted_ad_list =[]
-    
     if not user_ad_links_list:
         weighted_ad_list = owner_ad_links_list if owner_ad_links_list else["https://google.com"]
     elif not owner_ad_links_list:
@@ -561,133 +507,131 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         total_slots = 100
         admin_slots = int(admin_share_percent)
         user_slots = total_slots - admin_slots
-        
-        for _ in range(admin_slots):
-            weighted_ad_list.append(random.choice(owner_ad_links_list))
-            
-        for _ in range(user_slots):
-            weighted_ad_list.append(random.choice(user_ad_links_list))
-    
+        for _ in range(admin_slots): weighted_ad_list.append(random.choice(owner_ad_links_list))
+        for _ in range(user_slots): weighted_ad_list.append(random.choice(user_ad_links_list))
     random.shuffle(weighted_ad_list) 
 
+    # 🔥 ISOLATED CSS (PREVENTS BLOGGER THEME CONFLICTS)
     style_html = """
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-        body { margin: 0; padding: 10px; background-color: #050505; font-family: 'Poppins', sans-serif; color: #fff; }
-        .main-card { max-width: 600px; margin: 0 auto; background: #121212; border: 1px solid #333; border-radius: 15px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); text-align: center; }
-        .blur-content { filter: blur(20px); transition: filter 0.4s ease; cursor: pointer; }
-        .blur-content:hover { filter: blur(10px); }
-        .blur-content.blur-active { filter: none !important; }
-        .poster-wrapper { position: relative; display: inline-block; width: 100%; max-width: 250px; }
-        .reveal-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: #FF5252; padding: 10px 20px; border: 2px solid #FF5252; font-weight: bold; border-radius: 5px; cursor: pointer; display: none; z-index: 10; pointer-events: none; }
-        .is-blurred .reveal-btn { display: block; }
-        .poster-img { width: 100%; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.7); margin-bottom: 15px; border: 2px solid #333; }
-        h2 { color: #00d2ff; margin: 10px 0; font-size: 22px; font-weight: 700; }
-        p { text-align: justify; color: #ccc; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
-        .ss-container { margin: 25px 0; }
-        .neon-ss { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 2px solid #ff00de; box-shadow: 0 0 15px rgba(255, 0, 222, 0.3); }
+        .app-wrapper { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f13; border: 1px solid #2a2a35; border-radius: 12px; max-width: 600px; margin: 20px auto; padding: 20px; color: #fff; box-sizing: border-box; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .app-wrapper * { box-sizing: border-box; }
+        .poster-box { text-align: center; margin-bottom: 20px; }
+        .poster-box img { max-width: 250px; width: 100%; border-radius: 10px; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .movie-title { color: #00d2ff; font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 10px; line-height: 1.4; }
+        .movie-plot { color: #bbb; font-size: 13px; text-align: justify; margin-bottom: 20px; line-height: 1.6; }
         
-        /* 🔥 MODERN GRID UI BOX CSS 🔥 */
-        .pro-dl-box { background: #1a1a24; border: 1px solid #2d2d3f; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: left; }
-        .pro-dl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #2d2d3f; }
-        .pro-title { font-size: 16px; font-weight: 700; color: #ffeb3b; }
-        .pro-status { font-size: 11px; color: #00e676; font-weight: 600; background: rgba(0, 230, 118, 0.1); padding: 4px 10px; border-radius: 12px; letter-spacing: 0.5px; }
+        /* Main Action Buttons */
+        .action-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+        .main-btn { width: 100%; padding: 16px; font-size: 16px; font-weight: bold; text-transform: uppercase; color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; display: flex; justify-content: center; align-items: center; gap: 10px; letter-spacing: 1px; }
+        .btn-watch { background: linear-gradient(90deg, #ff0844 0%, #ffb199 100%); box-shadow: 0 4px 15px rgba(255, 8, 68, 0.4); }
+        .btn-download { background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; box-shadow: 0 4px 15px rgba(0, 201, 255, 0.4); }
+        .main-btn:disabled { filter: grayscale(1); cursor: not-allowed; opacity: 0.8; }
         
-        /* Grid Layout */
-        .pro-btn-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-        .full-width { grid-column: 1 / -1; flex-direction: row !important; justify-content: space-between !important; padding: 12px 18px !important; }
+        /* Links View (The Download Page) */
+        #view-links { display: none; background: #1a1a24; padding: 20px; border-radius: 10px; border: 1px solid #333; text-align: center; animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .success-title { color: #00e676; font-size: 18px; margin-bottom: 15px; border-bottom: 1px dashed #444; padding-bottom: 10px; }
         
-        /* Buttons Style */
-        .srv-btn { width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 12px; font-size: 13px; font-weight: 600; color: white; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3); gap: 6px; }
-        .btn-text { display: flex; align-items: center; justify-content: center; width: 100%; }
+        /* Final Server List Buttons */
+        .server-list { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; }
+        .final-server-btn { width: 100%; padding: 14px; font-size: 14px; font-weight: 600; color: #fff; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .stream-btn { background: #E50914; }
+        .tg-btn { background: #0088cc; }
+        .cloud-btn { background: #4caf50; }
+        .final-server-btn:hover { filter: brightness(1.2); transform: scale(1.02); }
         
-        /* Premium Gradients */
-        .srv-stream { background: linear-gradient(135deg, #ff416c, #ff4b2b); border: 1px solid #ff4b2b; }
-        .srv-tg { background: linear-gradient(135deg, #1e88e5, #1565c0); border: 1px solid #1e88e5; }
-        .srv-mirror { background: linear-gradient(135deg, #f57c00, #e65100); border: 1px solid #f57c00; }
-        .srv-oshi { background: linear-gradient(135deg, #7e57c2, #512da8); border: 1px solid #7e57c2; }
-        
-        .srv-btn:hover { filter: brightness(1.2); transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0,0,0,0.5); }
-        .srv-btn:active { transform: translateY(0); }
-        .srv-btn:disabled { background: #333 !important; color: #888 !important; border-color: #444 !important; cursor: not-allowed; transform: none; box-shadow: none; }
-        
-        /* Badge Enhancements */
-        .badge { background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
-        .badge-blue { background: rgba(255,255,255,0.2); }
-        
-        .disclaimer { font-size: 10px; color: #555; margin-top: 30px; border-top: 1px solid #222; padding-top: 10px; text-align: center; }
-        .instruction-box { background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; font-size: 12px; color: #bbb; text-align: center; margin-bottom: 20px; border: 1px dashed #444; }
-        
-        /* Mobile adjustment */
-        @media (max-width: 400px) {
-            .pro-btn-grid { grid-template-columns: 1fr; }
-            .srv-btn { flex-direction: row; justify-content: space-between; padding: 12px 15px; }
-        }
+        .promo-box { margin-top: 25px; text-align: center; }
+        .promo-box img { width: 100%; max-width: 300px; border-radius: 20px; }
     </style>
     """
 
+    # 🔥 JAVASCRIPT LOGIC
     script_html = f"""
     <script>
     const AD_LINKS = {json.dumps(weighted_ad_list)};
-    function toggleBlur(el) {{
-        el.classList.toggle('blur-active');
-        let wrapper = el.parentElement;
-        if(wrapper.classList.contains('poster-wrapper')) {{ wrapper.classList.remove('is-blurred'); }}
-    }}
-    function secureLink(btn, b64Url) {{
-        let realUrl = atob(b64Url);
+    
+    function startUnlock(btn, type) {{
+        // 1. Open Ad
         let randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
         window.open(randomAd, '_blank'); 
-        let timeLeft = 5;
         
-        let originalHTML = btn.innerHTML;
-        btn.disabled = true;
+        // 2. Disable buttons and start timer
+        let buttons = document.querySelectorAll('.main-btn');
+        buttons.forEach(b => b.disabled = true);
+        
+        let timeLeft = 5;
+        let originalText = btn.innerHTML;
         
         let timer = setInterval(function() {{
-            btn.innerHTML = "<span class='btn-text'>⏳ Wait... " + timeLeft + "s</span>";
+            btn.innerHTML = "⏳ Please Wait... " + timeLeft + "s";
             timeLeft--;
+            
             if (timeLeft < 0) {{
                 clearInterval(timer);
-                btn.innerHTML = "<span class='btn-text'>🚀 Loading...</span>";
-                btn.style.background = "#00C853"; 
-                btn.style.borderColor = "#00C853";
-                window.location.href = realUrl; 
+                btn.innerHTML = "✅ Unlocked!";
+                
+                // 3. Switch View (Hide Details, Show Servers)
+                document.getElementById('view-details').style.display = 'none';
+                document.getElementById('view-links').style.display = 'block';
             }}
         }}, 1000); 
     }}
+
+    function goToLink(b64Url) {{
+        let realUrl = atob(b64Url);
+        window.location.href = realUrl;
+    }}
     </script>
     """
-    
-    poster_wrapper_class = "is-blurred" if is_adult else ""
-    poster_img_class = "poster-img blur-content" if is_adult else "poster-img"
-    reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v42 Advanced Grid) -->
+    <!-- ADVANCED SINGLE PAGE APP BY BOT -->
     {style_html}
-    <div class="main-card">
-        <div class="poster-wrapper {poster_wrapper_class}">
-            <img src="{poster}" class="{poster_img_class}" onclick="toggleBlur(this)">
-            {reveal_html}
-        </div>
-        <h2>{title}</h2>
-        <p>{overview[:350]}...</p>
-        {ss_section}
+    <div class="app-wrapper">
         
-        <div class="instruction-box">ℹ️ <b>How to Watch/Download:</b> Select any option below. An ad will open, wait 5 seconds, and you will be redirected automatically.</div>
-        
-        <div class="dl-container-area">
-            {links_html}
+        <!-- MAIN LANDING VIEW -->
+        <div id="view-details">
+            <div class="poster-box">
+                <img src="{poster}" alt="Poster">
+            </div>
+            <div class="movie-title">{title}</div>
+            <div class="movie-plot">{overview[:250]}...</div>
+            
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; font-size: 12px; text-align: center; margin-bottom: 15px; color: #ccc;">
+                ℹ️ <b>How to Download:</b> Click any button below, wait 5 seconds, and the Server List will unlock automatically.
+            </div>
+            
+            <!-- THE TWO MAIN BUTTONS -->
+            <div class="action-grid">
+                <button class="main-btn btn-watch" onclick="startUnlock(this, 'watch')">
+                    ▶️ WATCH NOW
+                </button>
+                <button class="main-btn btn-download" onclick="startUnlock(this, 'download')">
+                    📥 DOWNLOAD NOW
+                </button>
+            </div>
+        </div>
+
+        <!-- HIDDEN SERVER LIST VIEW (OPENS AFTER 5 SECONDS) -->
+        <div id="view-links">
+            <div class="success-title">✅ Links Unlocked Successfully!</div>
+            <p style="font-size: 13px; color: #bbb;">Please select a server below to stream or download your file. All servers are fast and secure.</p>
+            
+            <!-- List by List Server Buttons -->
+            <div class="server-list">
+                {server_list_html}
+            </div>
         </div>
         
-        <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
-            <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}" style="width: 100%; max-width: 300px; border-radius: 50px; border: 2px solid #333;"></a>
+        <div class="promo-box">
+            <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}"></a>
         </div>
-        <div class="disclaimer">⚖️ <b>Disclaimer:</b> We do not host any files. Links are provided by third-party users. Protected by DMCA. Content may contain 18+ themes.</div>
+        
     </div>
-    {meta_html}
     {script_html}
-    """
+    """    
+    
     # ---- IMAGE & CAPTION GENERATOR ----
 def generate_formatted_caption(data, pid=None):
     title = data.get("title") or data.get("name") or "N/A"
