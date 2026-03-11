@@ -12,7 +12,6 @@ import string
 import base64
 import datetime
 import aiohttp
-from aiohttp import web
 import requests 
 import urllib3 
 import numpy as np 
@@ -26,6 +25,7 @@ from pyrogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, Message,
     CallbackQuery
 )
+from flask import Flask
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient 
 
@@ -45,17 +45,13 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 
-# 🔥 WEB DOMAIN CONFIG (নতুন যুক্ত করা হয়েছে)
-# .env ফাইলে WEB_URL না থাকলে ডিফল্ট localhost নিবে (যাতে error না আসে)
-WEB_URL = os.getenv("WEB_URL", "https://gorgeous-donetta-nahidcrk-7b84dba9.koyeb.app")
-
 # 🔥 ADMIN & DB CONFIG
 MONGO_URL = os.getenv("MONGO_URL") 
 OWNER_ID = int(os.getenv("OWNER_ID", 0)) 
 OWNER_USERNAME = os.getenv("OWNER_USERNAME", "admin") 
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
 
-# 🔥 ফাইল স্টোর চ্যানেল (অবশ্যই -100 দিয়ে শুরু হতে হবে)
+# 🔥 নতুন: ফাইল স্টোর চ্যানেল (অবশ্যই -100 দিয়ে শুরু হতে হবে)
 DB_CHANNEL_ID = int(os.getenv("DB_CHANNEL_ID", 0)) 
 
 # Check Variables
@@ -169,8 +165,8 @@ async def get_all_users_count():
 def generate_short_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# 🔥 Save Post Logic (Updated with Creator ID)
-async def save_post_to_db(post_data, links, creator_id=None):
+# 🔥 Save Post Logic
+async def save_post_to_db(post_data, links):
     pid = post_data.get("post_id")
     if not pid:
         pid = generate_short_id()
@@ -178,7 +174,6 @@ async def save_post_to_db(post_data, links, creator_id=None):
     
     save_data = {
         "_id": pid,
-        "creator_id": creator_id,
         "details": post_data,
         "links": links,
         "updated_at": datetime.datetime.now()
@@ -205,6 +200,63 @@ async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
             logger.error(f"HTTP Error: {e}")
             return None
     return None
+
+# ====================================================================
+# 🔥 AUTO MIRROR UPLOAD FUNCTIONS
+# ====================================================================
+
+# 🔥 Auto Upload to GoFile (Unlimited Storage, Fast)
+async def upload_to_gofile(file_path):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.gofile.io/servers") as resp:
+                data = await resp.json()
+                server = data['data']['servers'][0]['name']
+            url = f"https://{server}.gofile.io/contents/uploadfile"
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                async with session.post(url, data=form) as upload_resp:
+                    result = await upload_resp.json()
+                    if result['status'] == 'ok':
+                        return result['data']['downloadPage']
+    except Exception as e:
+        logger.error(f"Gofile Upload Error: {e}")
+    return None
+
+# 🔥 Auto Upload to PixelDrain (Free, High Speed)
+async def upload_to_pixeldrain(file_path):
+    try:
+        url = "https://pixeldrain.com/api/file"
+        async with aiohttp.ClientSession() as session:
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                async with session.post(url, data=form) as resp:
+                    result = await resp.json()
+                    if result.get('success'):
+                        return f"https://pixeldrain.com/u/{result['id']}"
+    except Exception as e:
+        logger.error(f"PixelDrain Upload Error: {e}")
+    return None
+
+# ---- FLASK KEEP-ALIVE ----
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 v42 Bot Running (Auto Mirror System Added)"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive_pinger():
+    while True:
+        try:
+            requests.get("http://localhost:8080")
+            time.sleep(600) 
+        except:
+            time.sleep(600)
 
 # ============================================================================
 # 🔥 AUTOMATIC RESOURCE DOWNLOADER
@@ -388,18 +440,86 @@ def apply_badge_to_poster(poster_bytes, text):
         return img_buffer
     except: return io.BytesIO(poster_bytes)
 
-
 # ============================================================================
-# 🔥 HTML GENERATOR (UPDATED FOR BLOGGER WITH WAIT AD & REDIRECT)
+# 🔥 ADVANCED HTML GENERATOR (Multi-Server UI)
 # ============================================================================
-def generate_html_code(data, pid, user_ad_links_list, owner_ad_links_list, admin_share_percent=20):
+def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, admin_share_percent=20):
     title = data.get("title") or data.get("name")
     overview = data.get("overview", "")
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
     is_adult = data.get('adult', False) or data.get('force_adult', False)
+    BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
+
+    lang_str = data.get('custom_language', 'Dual Audio').strip()
+    if data.get('is_manual'): genres_str = "Movie / Unknown" 
+    else:
+        genres_list = [g['name'] for g in data.get('genres',[])]
+        genres_str = ", ".join(genres_list) if genres_list else "Movie"
+
+    meta_html = f"""
+    <!-- HIDDEN METADATA -->
+    <div style="display:none;" id="meta-genre">{genres_str}</div>
+    <div style="display:none;" id="meta-language">{lang_str}</div>
+    """
+
+    ss_html = ""
+    if data.get('manual_screenshots'):
+        for ss_url in data['manual_screenshots']:
+            blur_class = "blur-content" if is_adult else ""
+            ss_html += f'<div class="ss-wrapper"><img src="{ss_url}" class="neon-ss {blur_class}" onclick="toggleBlur(this)" alt="Screenshot"></div>'
+    elif not data.get('is_manual') and data.get("images"):
+        backdrops = data["images"].get("backdrops",[])
+        count = 0
+        for bd in backdrops:
+            if count >= 4: break
+            if bd.get('aspect_ratio', 1.7) > 1.2: 
+                ss_url = f"https://image.tmdb.org/t/p/w780{bd['file_path']}"
+                blur_class = "blur-content" if is_adult else ""
+                ss_html += f'<div class="ss-wrapper"><img src="{ss_url}" class="neon-ss {blur_class}" onclick="toggleBlur(this)" alt="Screenshot"></div>'
+                count += 1
     
+    ss_section = ""
+    if ss_html:
+        ss_section = f"""<div class="ss-container"><h3 style="color: #ff00de; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ff00de; display: inline-block;">📸 SCREENSHOTS</h3>{ss_html}</div>"""
+
+    # 🔥 ম্যাজিক এখানে: একটাই বক্সের ভেতরে ৩টি অপশন (Telegram, Gofile, PixelDrain)
+    links_html = ""
+    for idx, link in enumerate(links):
+        label = link['label']
+        btn_html = ""
+        
+        if link.get("is_grouped"):
+            tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
+            btn_html += f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span>✈️ Telegram File</span> <span class="badge badge-blue">Safe</span></button>'
+            
+            if link.get('gofile_url'):
+                go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
+                btn_html += f'<button class="srv-btn srv-fast" onclick="secureLink(this, \'{go_b64}\')"><span>⚡ Server 1 (GoFile)</span> <span class="badge">Fast</span></button>'
+                
+            if link.get('pixel_url'):
+                px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
+                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span>☁️ Server 2 (PixelDrain)</span> <span class="badge">HD</span></button>'
+                
+        else:
+            # যদি ম্যানুয়ালি কোনো টেক্সট লিংক (URL) দিয়ে থাকেন
+            url_str = link.get('url', '')
+            encoded_url = base64.b64encode(url_str.encode('utf-8')).decode('utf-8')
+            btn_html = f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{encoded_url}\')"><span>🔗 Download Link</span> <span class="badge badge-blue">Direct</span></button>'
+
+        links_html += f"""
+        <div class="pro-dl-box">
+            <div class="pro-dl-header">
+                <span class="pro-title">📁 {label}</span>
+                <span class="pro-status">● Available</span>
+            </div>
+            <div class="pro-btn-grid">
+                {btn_html}
+            </div>
+        </div>"""
+
     # 🔥 REVENUE SHARE LOGIC 🔥
     weighted_ad_list =[]
+    
     if not user_ad_links_list:
         weighted_ad_list = owner_ad_links_list if owner_ad_links_list else ["https://google.com"]
     elif not owner_ad_links_list:
@@ -408,83 +528,111 @@ def generate_html_code(data, pid, user_ad_links_list, owner_ad_links_list, admin
         total_slots = 100
         admin_slots = int(admin_share_percent)
         user_slots = total_slots - admin_slots
+        
         for _ in range(admin_slots):
             weighted_ad_list.append(random.choice(owner_ad_links_list))
+            
         for _ in range(user_slots):
             weighted_ad_list.append(random.choice(user_ad_links_list))
-    random.shuffle(weighted_ad_list) 
     
-    watch_link = f"{WEB_URL}/watch/{pid}"
-    encoded_url = base64.b64encode(watch_link.encode('utf-8')).decode('utf-8')
+    random.shuffle(weighted_ad_list) 
 
     style_html = """
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
         body { margin: 0; padding: 10px; background-color: #050505; font-family: 'Poppins', sans-serif; color: #fff; }
         .main-card { max-width: 600px; margin: 0 auto; background: #121212; border: 1px solid #333; border-radius: 15px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); text-align: center; }
+        .blur-content { filter: blur(20px); transition: filter 0.4s ease; cursor: pointer; }
+        .blur-content:hover { filter: blur(10px); }
+        .blur-content.blur-active { filter: none !important; }
         .poster-wrapper { position: relative; display: inline-block; width: 100%; max-width: 250px; }
+        .reveal-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: #FF5252; padding: 10px 20px; border: 2px solid #FF5252; font-weight: bold; border-radius: 5px; cursor: pointer; display: none; z-index: 10; pointer-events: none; }
+        .is-blurred .reveal-btn { display: block; }
         .poster-img { width: 100%; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.7); margin-bottom: 15px; border: 2px solid #333; }
         h2 { color: #00d2ff; margin: 10px 0; font-size: 22px; font-weight: 700; }
         p { text-align: justify; color: #ccc; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
-        .play-btn { width: 100%; max-width: 350px; padding: 16px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 50px; cursor: pointer; background: linear-gradient(45deg, #FF512F, #DD2476); display: inline-block; text-decoration: none; box-shadow: 0 0 20px rgba(221, 36, 118, 0.4); transition: transform 0.2s; margin-top: 15px; }
-        .play-btn:hover { transform: scale(1.05); }
+        .ss-container { margin: 25px 0; }
+        .neon-ss { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 2px solid #ff00de; box-shadow: 0 0 15px rgba(255, 0, 222, 0.3); }
+        
+        /* Modern Download Box CSS */
+        .pro-dl-box { background: #1a1a24; border: 1px solid #2d2d3f; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: left; }
+        .pro-dl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #2d2d3f; }
+        .pro-title { font-size: 16px; font-weight: 700; color: #ffeb3b; }
+        .pro-status { font-size: 11px; color: #00e676; font-weight: 600; background: rgba(0, 230, 118, 0.1); padding: 3px 8px; border-radius: 12px; }
+        .pro-btn-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .srv-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; font-size: 14px; font-weight: 600; color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .srv-fast { background: linear-gradient(90deg, #d32f2f, #f44336); }
+        .srv-mirror { background: linear-gradient(90deg, #f57c00, #ff9800); }
+        .srv-tg { background: linear-gradient(90deg, #1976d2, #2196f3); }
+        .srv-btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
+        .srv-btn:disabled { background: #444 !important; color: #aaa !important; cursor: not-allowed; transform: none; }
+        .badge { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+        .badge-blue { background: rgba(255,255,255,0.2); }
+        
+        .disclaimer { font-size: 10px; color: #555; margin-top: 30px; border-top: 1px solid #222; padding-top: 10px; text-align: center; }
+        .instruction-box { background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; font-size: 12px; color: #bbb; text-align: center; margin-bottom: 20px; border: 1px dashed #444; }
     </style>
     """
 
     script_html = f"""
     <script>
     const AD_LINKS = {json.dumps(weighted_ad_list)};
+    function toggleBlur(el) {{
+        el.classList.toggle('blur-active');
+        let wrapper = el.parentElement;
+        if(wrapper.classList.contains('poster-wrapper')) {{ wrapper.classList.remove('is-blurred'); }}
+    }}
     function secureLink(btn, b64Url) {{
         let realUrl = atob(b64Url);
         let randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
-        
-        // Open Ad Pop-up
-        window.open(randomAd, '_blank');
-        
-        // Button Logic
-        let originalText = btn.innerHTML;
+        window.open(randomAd, '_blank'); 
         let timeLeft = 5;
+        
+        let originalHTML = btn.innerHTML;
         btn.disabled = true;
-        btn.style.background = "#444";
-        btn.style.cursor = "not-allowed";
         
         let timer = setInterval(function() {{
-            btn.innerHTML = "⏳ Wait... " + timeLeft + "s";
+            btn.innerHTML = "⏳ Please Wait... " + timeLeft + "s";
             timeLeft--;
             if (timeLeft < 0) {{
                 clearInterval(timer);
-                btn.innerHTML = "🚀 Redirecting...";
-                btn.style.background = "#00C853";
-                window.location.href = realUrl;
-                
-                setTimeout(() => {{ 
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    btn.style.background = "linear-gradient(45deg, #FF512F, #DD2476)";
-                    btn.style.cursor = "pointer";
-                }}, 3000);
+                btn.innerHTML = "🚀 Downloading...";
+                btn.style.background = "#00C853"; 
+                window.location.href = realUrl; 
             }}
         }}, 1000); 
     }}
     </script>
     """
+    
+    poster_wrapper_class = "is-blurred" if is_adult else ""
+    poster_img_class = "poster-img blur-content" if is_adult else "poster-img"
+    reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
+    <!-- Auto Redirect Code (v42 Shared - Pro UI) -->
     {style_html}
     <div class="main-card">
-        <div class="poster-wrapper">
-            <img src="{poster}" class="poster-img">
+        <div class="poster-wrapper {poster_wrapper_class}">
+            <img src="{poster}" class="{poster_img_class}" onclick="toggleBlur(this)">
+            {reveal_html}
         </div>
         <h2>{title}</h2>
         <p>{overview[:350]}...</p>
+        {ss_section}
         
-        <!-- 🔥 SINGLE BUTTON TO MAIN PAGE WITH WAIT + AD 🔥 -->
-        <button class="play-btn" onclick="secureLink(this, '{encoded_url}')">▶️ WATCH & DOWNLOAD NOW</button>
+        <div class="instruction-box">ℹ️ <b>How to Download:</b> Select any server below. An ad will open, wait 5 seconds, and your download will start automatically.</div>
         
-        <div style="font-size: 11px; color: #555; margin-top: 25px; border-top: 1px solid #222; padding-top: 10px;">
-            ⚖️ Disclaimer: Links are provided by third-party users. Protected by DMCA.
+        <div class="dl-container-area">
+            {links_html}
         </div>
+        
+        <div style="margin-top: 25px; border-top: 1px solid #333; padding-top: 20px;">
+            <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}" style="width: 100%; max-width: 300px; border-radius: 50px; border: 2px solid #333;"></a>
+        </div>
+        <div class="disclaimer">⚖️ <b>Disclaimer:</b> We do not host any files. Links are provided by third-party users. Protected by DMCA. Content may contain 18+ themes.</div>
     </div>
+    {meta_html}
     {script_html}
     """
 
@@ -584,6 +732,7 @@ except Exception as e:
 
 # ---- BOT COMMANDS ----
 
+# 🔥 HELPER FOR CAPTION GENERATION
 def generate_file_caption(details):
     title = details.get("title") or details.get("name") or "Unknown"
     year = (details.get("release_date") or details.get("first_air_date") or "----")[:4]
@@ -598,6 +747,7 @@ def generate_file_caption(details):
     
     return f"🎬 **{title} ({year})**\n━━━━━━━━━━━━━━━━━━━━━━━\n⭐ Rating: {rating}\n🎭 Genre: {genres}\n🔊 Language: {lang}\n\n🤖 Join: @{(bot.me).username}"
 
+# 🔥 UPDATED START COMMAND
 @bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     uid = message.from_user.id
@@ -618,6 +768,8 @@ async def start_cmd(client, message):
                 temp_msg = await message.reply_text("🔍 **Searching File...**")
                 
                 post = await posts_col.find_one({"links.tg_url": {"$regex": f"get-{msg_id}"}})
+                if not post:
+                    post = await posts_col.find_one({"links.url": {"$regex": f"get-{msg_id}"}})
                 
                 final_caption = ""
                 if post and "details" in post:
@@ -645,7 +797,7 @@ async def start_cmd(client, message):
                         quote=True
                     )
                     
-                    asyncio.create_task(auto_delete_task(client, uid, [file_msg.id, warning_msg.id], timer))
+                    asyncio.create_task(auto_delete_task(client, uid,[file_msg.id, warning_msg.id], timer))
 
                 return 
             except Exception as e:
@@ -673,7 +825,8 @@ async def start_cmd(client, message):
         "মুভি খুঁজে না পেলে বা নিজের মতো বানাতে:\n"
         "👉 `/manual`\n\n"
         "3️⃣ **ফাইল যোগ করা (File Store):**\n"
-        "পোস্ট বানানোর সময় যখন লিংক চাইবে, তখন **URL** না দিয়ে সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন।\n\n"
+        "পোস্ট বানানোর সময় যখন লিংক চাইবে, তখন সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন।\n"
+        "_(বট ফাইলটি অটোমেটিক টেলিগ্রাম, GoFile, ও PixelDrain-এ আপলোড করে ৩টি রিয়েল লিংক তৈরি করবে!)_\n\n"
         "4️⃣ **ইনকাম সেটআপ (Ad Setup):**\n"
         "আপনার নিজের ডিরেক্ট লিংক সেট করতে:\n"
         "👉 `/setadlink <আপনার লিংক>`\n\n"
@@ -919,6 +1072,7 @@ async def on_select(client, cb):
         await cb.message.edit_text(f"✅ Selected: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language** (e.g. Hindi):")
     except Exception as e: logger.error(f"Select Error: {e}")
 
+# ---- CONVERSATION HANDLER ----
 @bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel"]))
 async def text_handler(client, message):
     uid = message.from_user.id
@@ -985,56 +1139,78 @@ async def text_handler(client, message):
         convo["state"] = "wait_link_url"
         await message.reply_text(f"✅ বাটনের নাম সেট হয়েছে: **{text}**\n\n🔗 এবার **URL** দিন অথবা সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন:")
         
-    # 🔥 UPDATED: 3 in 1 Link URL Storage
     elif state == "wait_link_url":
         if message.video or message.document:
             if DB_CHANNEL_ID == 0:
                 return await message.reply_text("❌ Error: DB_CHANNEL_ID not configured in .env")
             
-            temp_msg = await message.reply_text("⏳ **Saving File to Database...**")
+            status_msg = await message.reply_text("⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n_(Telegram Link তৈরি হচ্ছে)_")
+            
             try:
+                # 1. Save to Telegram (Your Bot Link - অরিজিনাল টেলিগ্রাম সিস্টেম)
                 copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
                 bot_username = (await client.get_me()).username
+                tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
                 
-                # 3 in 1 Web Links Setup
-                tg_url = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
-                stream_url = f"{WEB_URL}/stream/{copied_msg.id}"
-                download_url = f"{WEB_URL}/download/{copied_msg.id}"
+                # 2. Download File to Bot Server
+                await status_msg.edit_text("⏳ **২/৩: বট সার্ভারে ডাউনলোড হচ্ছে...**\n_(মুভির সাইজ বড় হলে একটু সময় লাগবে, দয়া করে অপেক্ষা করুন)_")
+                file_path = await message.download()
 
+                # 3. Upload to External Servers
+                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল সার্ভারে আপলোড হচ্ছে...**\n_(GoFile এবং PixelDrain এ রিয়েল লিংক তৈরি হচ্ছে)_")
+                
+                gofile_url = await upload_to_gofile(file_path)
+                pixeldrain_url = await upload_to_pixeldrain(file_path)
+
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                
+                await status_msg.delete()
+
+                # 🔥 টেলিগ্রাম এবং অন্যান্য সার্ভারের লিংক একসাথে একটি গ্রুপে সেভ করা হচ্ছে
                 convo["links"].append({
-                    "label": convo["temp_name"], 
-                    "is_file": True,
-                    "tg_url": tg_url,
-                    "stream_url": stream_url,
-                    "download_url": download_url
+                    "label": convo["temp_name"],
+                    "tg_url": tg_link,
+                    "gofile_url": gofile_url,
+                    "pixel_url": pixeldrain_url,
+                    "is_grouped": True
                 })
-                await temp_msg.delete()
+
+                if convo.get("post_id"):
+                     convo["state"] = "edit_mode"
+                     btns = [[InlineKeyboardButton("➕ Add Another Link", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate Code", callback_data=f"gen_edit_{uid}")]]
+                     await message.reply_text(f"✅ **Saved 100% Genuinely!**\nটেলিগ্রাম + সার্ভার লিংক তৈরি হয়েছে।", reply_markup=InlineKeyboardMarkup(btns))
+                else:
+                    convo["state"] = "ask_links"
+                    buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
+                    await message.reply_text(f"✅ **Saved 100% Genuinely!**\nটেলিগ্রাম + সার্ভার লিংক তৈরি হয়েছে।\nTotal Uploads: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
+
             except Exception as e:
-                logger.error(f"File Save Error: {e}")
-                await temp_msg.edit_text("❌ Failed to save file.")
+                logger.error(f"File Auto-Mirror Error: {e}")
+                await status_msg.edit_text(f"❌ Failed to process file. Error: {e}")
+                if 'file_path' in locals() and os.path.exists(file_path):
+                    os.remove(file_path)
                 return
 
         elif text.startswith("http"):
-            convo["links"].append({
-                "label": convo["temp_name"], 
-                "url": text, 
-                "is_file": False
-            })
-
-        if convo.get("post_id"):
-             convo["state"] = "edit_mode"
-             btns = [[InlineKeyboardButton("➕ Add Another", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]]
-             await message.reply_text(f"✅ **Saved!**\n\nAdd another or Finish?", reply_markup=InlineKeyboardMarkup(btns))
+            convo["links"].append({"label": convo["temp_name"], "url": text, "is_grouped": False})
+            if convo.get("post_id"):
+                 convo["state"] = "edit_mode"
+                 btns = [[InlineKeyboardButton("➕ Add Another", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate Code", callback_data=f"gen_edit_{uid}")]]
+                 await message.reply_text(f"✅ **Saved!**\nLink: `{text}`", reply_markup=InlineKeyboardMarkup(btns))
+            else:
+                convo["state"] = "ask_links"
+                buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
+                await message.reply_text(f"✅ **Saved!**\nLink: `{text}`\nTotal Links: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            convo["state"] = "ask_links"
-            buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
-            await message.reply_text(f"✅ **Saved!**\nTotal: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
+            await message.reply_text("⚠️ Invalid Input. Please send a **URL** or **Forward a File**.")
     
     elif state == "wait_badge_text":
         convo["details"]["badge_text"] = text
         buttons = [[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}")],[InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]]
         await message.reply_text("🛡️ **Safety Check:**", reply_markup=InlineKeyboardMarkup(buttons))
 
+# 🔥 HANDLERS FOR CALLBACKS
 @bot.on_callback_query(filters.regex("^ss_"))
 async def ss_cb(client, cb):
     try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
@@ -1129,12 +1305,13 @@ async def generate_final_post(client, uid, message):
 
     convo = user_conversations[uid]
     
-    try: status_msg = await message.edit_text("⏳ **Generating Post...**\nChecking ad configuration...")
-    except: status_msg = message
+    try:
+        status_msg = await message.edit_text("⏳ **Generating Post...**\nChecking ad configuration...")
+    except:
+        status_msg = message
 
     try:
-        # 🔥 Save/Update Post with UID
-        pid = await save_post_to_db(convo["details"], convo["links"], uid)
+        pid = await save_post_to_db(convo["details"], convo["links"])
         
         loop = asyncio.get_running_loop()
         
@@ -1149,12 +1326,11 @@ async def generate_final_post(client, uid, message):
             new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
             if new_poster_url: convo["details"]["manual_poster_url"] = new_poster_url 
         
-        # 🔥 Fetch Ads
         my_ad_links = await get_user_ads(uid)
         owner_ad_links = await get_owner_ads()
         admin_share = await get_admin_share()
         
-        html = generate_html_code(convo["details"], pid, my_ad_links, owner_ad_links, admin_share)
+        html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links, admin_share)
         caption = generate_formatted_caption(convo["details"], pid)
         convo["final"] = {"html": html}
         
@@ -1178,8 +1354,10 @@ async def generate_final_post(client, uid, message):
             
     except Exception as e:
         logger.error(f"Post Generation Critical Error: {e}")
-        try: await status_msg.edit_text(f"❌ **Error:** Something went wrong.\n`{str(e)}`")
-        except: await client.send_message(message.chat.id, f"❌ **Error:** Something went wrong.\n`{str(e)}`")
+        try:
+            await status_msg.edit_text(f"❌ **Error:** Something went wrong.\n`{str(e)}`")
+        except:
+            await client.send_message(message.chat.id, f"❌ **Error:** Something went wrong during post generation.\n`{str(e)}`")
 
 @bot.on_callback_query(filters.regex("^get_code_"))
 async def get_code(client, cb):
@@ -1197,233 +1375,15 @@ async def get_code(client, cb):
         file.name = "blogger_post.html"
         await client.send_document(cb.message.chat.id, file, caption="⚠️ Link failed. File attached.")
 
-
-# ============================================================================
-# 🔥 WEB SERVER (AIOHTTP) - STREAMING & WATCH PAGE
-# ============================================================================
-
-async def home_route(request):
-    return web.Response(text="🤖 Ultimate Bot & Streaming Server is Online!")
-
-async def stream_file(request):
-    try:
-        msg_id = int(request.match_info['msg_id'])
-        action = request.match_info['action'] 
-        
-        msg = await bot.get_messages(DB_CHANNEL_ID, msg_id)
-        if not msg or (not msg.video and not msg.document):
-            return web.Response(status=404, text="File Not Found")
-        
-        file_media = msg.video or msg.document
-        file_size = file_media.file_size
-        file_name = getattr(file_media, 'file_name', f"video_{msg_id}.mp4")
-        
-        range_header = request.headers.get('Range')
-        if range_header:
-            start_str, end_str = range_header.replace("bytes=", "").split("-")
-            start = int(start_str)
-            end = int(end_str) if end_str else file_size - 1
-            status = 206
-        else:
-            start = 0
-            end = file_size - 1
-            status = 200
-
-        chunk_size = end - start + 1
-        headers = {
-            'Content-Type': 'video/mp4' if msg.video else 'application/octet-stream',
-            'Content-Range': f'bytes {start}-{end}/{file_size}',
-            'Accept-Ranges': 'bytes',
-            'Content-Length': str(chunk_size),
-        }
-
-        if action == "download":
-            headers['Content-Disposition'] = f'attachment; filename="{file_name}"'
-
-        response = web.StreamResponse(status=status, headers=headers)
-        await response.prepare(request)
-        
-        async for chunk in bot.stream_media(msg, limit=chunk_size, offset=start):
-            await response.write(chunk)
-            
-        return response
-    except Exception as e:
-        logger.error(f"Streaming Error: {e}")
-        return web.Response(status=500, text="Internal Server Error")
-
-
-async def render_watch_page(request):
-    try:
-        post_id = request.match_info['post_id']
-        post = await posts_col.find_one({"_id": post_id})
-        
-        if not post:
-            return web.Response(text="<h1 style='color:white; text-align:center; font-family:sans-serif; margin-top:50px;'>❌ 404 - Post Not Found</h1>", status=404, content_type='text/html')
-
-        details = post.get("details", {})
-        links = post.get("links",[])
-        creator_id = post.get("creator_id")
-        
-        title = details.get("title") or details.get("name") or "Movie File"
-        poster = details.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{details.get('poster_path', '')}"
-
-        # 🔥 AD LOGIC FOR MAIN WATCH PAGE
-        owner_ad_links = await get_owner_ads()
-        admin_share = await get_admin_share()
-        user_ad_links = await get_user_ads(creator_id) if creator_id else []
-
-        weighted_ads =[]
-        if not user_ad_links:
-            weighted_ads = owner_ad_links if owner_ad_links else["https://google.com"]
-        elif not owner_ad_links:
-            weighted_ads = user_ad_links
-        else:
-            total_slots = 100
-            admin_slots = int(admin_share)
-            for _ in range(admin_slots): weighted_ads.append(random.choice(owner_ad_links))
-            for _ in range(total_slots - admin_slots): weighted_ads.append(random.choice(user_ad_links))
-        random.shuffle(weighted_ads)
-
-        player_html = ""
-        buttons_html = ""
-        has_player = False
-
-        for idx, link in enumerate(links):
-            if link.get("is_file"):
-                if not has_player:
-                    player_html = f"""
-                    <div style="background: #000; padding: 5px; border-radius: 12px; border: 2px solid #ff00de; box-shadow: 0 0 20px rgba(255, 0, 222, 0.2); margin-bottom: 25px;">
-                        <video id="vid-player" controls playsinline poster="{poster}" style="width: 100%; border-radius: 8px; outline: none; aspect-ratio: 16/9; background: #000;">
-                            <source src="{link['stream_url']}" type="video/mp4">
-                            Your browser does not support the video tag.
-                        </video>
-                    </div>
-                    """
-                    has_player = True
-
-                encoded_dl = base64.b64encode(link['download_url'].encode('utf-8')).decode('utf-8')
-                buttons_html += f"""
-                <div class="quality-box">
-                    <div class="quality-title">🎬 {link['label']}</div>
-                    <div class="btn-group">
-                        <button class="btn btn-stream" onclick="document.getElementById('vid-player').src='{link['stream_url']}'; document.getElementById('vid-player').play(); window.scrollTo(0,0);">▶️ STREAM NOW</button>
-                        <button class="btn btn-tg" onclick="window.open('{link['tg_url']}', '_blank')">✈️ TELEGRAM</button>
-                        <button class="btn btn-dl" onclick="secureDL(this, '{encoded_dl}')">⬇️ DIRECT DL</button>
-                    </div>
-                </div>
-                """
-            else:
-                encoded_ext = base64.b64encode(link['url'].encode('utf-8')).decode('utf-8')
-                buttons_html += f"""
-                <div class="quality-box">
-                    <div class="quality-title">📂 {link['label']}</div>
-                    <button class="btn btn-dl" onclick="secureDL(this, '{encoded_ext}')" style="width: 100%;">🔗 EXTERNAL LINK</button>
-                </div>
-                """
-
-        full_html = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Watch {title}</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
-                body {{ background: #050505; color: #fff; font-family: 'Poppins', sans-serif; margin: 0; padding: 20px; }}
-                .container {{ max-width: 800px; margin: 0 auto; padding-bottom: 50px; }}
-                h2 {{ text-align: center; color: #00d2ff; margin-bottom: 20px; }}
-                .quality-box {{ background: #151515; border: 1px solid #333; padding: 15px; border-radius: 12px; margin-bottom: 15px; }}
-                .quality-title {{ color: #ffeb3b; font-size: 18px; font-weight: 600; margin-bottom: 15px; text-transform: uppercase; text-align: center; }}
-                .btn-group {{ display: flex; gap: 10px; flex-wrap: wrap; }}
-                .btn {{ flex: 1; min-width: 150px; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; color: white; cursor: pointer; transition: 0.3s; text-align: center; text-decoration: none; display: block; }}
-                .btn:hover {{ opacity: 0.8; transform: translateY(-2px); }}
-                .btn-stream {{ background: linear-gradient(45deg, #11998e, #38ef7d); }}
-                .btn-tg {{ background: linear-gradient(45deg, #2196f3, #045de9); }}
-                .btn-dl {{ background: linear-gradient(45deg, #FF512F, #DD2476); }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>{title}</h2>
-                {player_html}
-                
-                <h3 style="border-bottom: 2px solid #333; padding-bottom: 10px; color: #aaa; margin-top: 30px;">📂 Available Links</h3>
-                {buttons_html}
-            </div>
-
-            <script>
-                const AD_LINKS = {json.dumps(weighted_ads)};
-                
-                function secureDL(btn, b64Url) {{
-                    let realUrl = atob(b64Url);
-                    let randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
-                    
-                    window.open(randomAd, '_blank'); // Open Ad
-                    
-                    let originalText = btn.innerHTML;
-                    let timeLeft = 5;
-                    btn.disabled = true;
-                    btn.style.background = "#444";
-                    btn.style.cursor = "not-allowed";
-                    
-                    let timer = setInterval(function() {{
-                        btn.innerHTML = "⏳ Wait " + timeLeft + "s";
-                        timeLeft--;
-                        if (timeLeft < 0) {{
-                            clearInterval(timer);
-                            btn.innerHTML = "🚀 Downloading...";
-                            btn.style.background = "#00C853";
-                            window.location.href = realUrl;
-                            
-                            setTimeout(() => {{ 
-                                btn.innerHTML = originalText;
-                                btn.disabled = false;
-                                btn.style.background = "linear-gradient(45deg, #FF512F, #DD2476)";
-                                btn.style.cursor = "pointer";
-                            }}, 3000);
-                        }}
-                    }}, 1000); 
-                }}
-            </script>
-        </body>
-        </html>
-        """
-        return web.Response(text=full_html, content_type='text/html')
-        
-    except Exception as e:
-        logger.error(f"Watch Page Error: {e}")
-        return web.Response(text="<h1>Internal Server Error</h1>", status=500, content_type='text/html')
-
-# ============================================================================
-# 🔥 ENTRY POINT 
-# ============================================================================
-
-async def web_server():
-    app = web.Application()
-    app.router.add_get('/', home_route)
-    app.router.add_get('/watch/{post_id}', render_watch_page)
-    app.router.add_get('/{action}/{msg_id}', stream_file)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    logger.info(f"🌐 Aiohttp Web Server Running on Port {port}")
-
-async def main():
-    await bot.start()
-    logger.info("🤖 Movie Bot Started Successfully!")
-    
-    await web_server()
-    
-    import pyrogram
-    await pyrogram.idle()
-    
-    await bot.stop()
-
+# ---- ENTRY POINT ----
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    ping_thread = Thread(target=keep_alive_pinger)
+    ping_thread.daemon = True
+    ping_thread.start()
+    
+    print("🚀 Ultimate Bot Started (v42 - Honest Auto Mirror + Pro UI)!")
+    bot.run()
