@@ -79,7 +79,7 @@ DEFAULT_OWNER_AD_LINKS =[
     "https://www.google.com",
     "https://www.bing.com"
 ]
-DEFAULT_USER_AD_LINKS =["https://www.google.com", "https://www.bing.com"] 
+DEFAULT_USER_AD_LINKS = ["https://www.google.com", "https://www.bing.com"] 
 
 user_conversations = {}
 
@@ -202,10 +202,10 @@ async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
     return None
 
 # ====================================================================
-# 🔥 AUTO MIRROR UPLOAD FUNCTIONS
+# 🔥 AUTO MIRROR UPLOAD FUNCTIONS (3 FREE SERVERS)
 # ====================================================================
 
-# 🔥 Auto Upload to GoFile (Unlimited Storage, Fast)
+# 1. Upload to GoFile (Unlimited, Fast - Built-in Player for Streaming)
 async def upload_to_gofile(file_path):
     try:
         async with aiohttp.ClientSession() as session:
@@ -224,7 +224,7 @@ async def upload_to_gofile(file_path):
         logger.error(f"Gofile Upload Error: {e}")
     return None
 
-# 🔥 Auto Upload to PixelDrain (Free, High Speed)
+# 2. Upload to PixelDrain (High Speed, Free)
 async def upload_to_pixeldrain(file_path):
     try:
         url = "https://pixeldrain.com/api/file"
@@ -240,12 +240,29 @@ async def upload_to_pixeldrain(file_path):
         logger.error(f"PixelDrain Upload Error: {e}")
     return None
 
+# 3. Upload to Oshi.at (Up to 5GB Anonymous)
+async def upload_to_oshi(file_path):
+    try:
+        url = "https://oshi.at"
+        async with aiohttp.ClientSession() as session:
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('f', f, filename=os.path.basename(file_path))
+                async with session.post(url, data=form) as resp:
+                    text = await resp.text()
+                    match = re.search(r'(https://oshi\.at/[a-zA-Z0-9]+)', text)
+                    if match:
+                        return match.group(1)
+    except Exception as e:
+        logger.error(f"Oshi Upload Error: {e}")
+    return None
+
 # ---- FLASK KEEP-ALIVE ----
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v42 Bot Running (Auto Mirror System + Progress Bar + Pro UI)"
+    return "🤖 v42 Bot Running (Bengali Help Added - Video Stream UI & Progress Bar)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -360,8 +377,8 @@ async def search_tmdb(query):
         if year: url += f"&year={year}"
         
         data = await fetch_url(url)
-        if not data: return []
-        return[r for r in data.get("results", []) if r.get("media_type") in ["movie", "tv"]][:15]
+        if not data: return[]
+        return[r for r in data.get("results", []) if r.get("media_type") in["movie", "tv"]][:15]
     except: return[]
 
 async def get_tmdb_details(media_type, media_id):
@@ -441,7 +458,7 @@ def apply_badge_to_poster(poster_bytes, text):
     except: return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 ADVANCED HTML GENERATOR (Multi-Server UI)
+# 🔥 ADVANCED HTML GENERATOR (STREAMING + MULTI SERVER UI)
 # ============================================================================
 def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, admin_share_percent=20):
     title = data.get("title") or data.get("name")
@@ -482,46 +499,71 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     if ss_html:
         ss_section = f"""<div class="ss-container"><h3 style="color: #ff00de; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ff00de; display: inline-block;">📸 SCREENSHOTS</h3>{ss_html}</div>"""
 
-    # 🔥 ম্যাজিক এখানে: একটাই বক্সের ভেতরে ৩টি অপশন (Telegram, Gofile, PixelDrain)
+    # 🔥 STREAMING & MULTI DOWNLOAD UI GENERATION
     links_html = ""
     for idx, link in enumerate(links):
         label = link['label']
-        btn_html = ""
         
         if link.get("is_grouped"):
-            tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
-            btn_html += f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span>✈️ Telegram File</span> <span class="badge badge-blue">Safe</span></button>'
-            
+            # GoFile Link for Streaming
             if link.get('gofile_url'):
                 go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-fast" onclick="secureLink(this, \'{go_b64}\')"><span>⚡ Server 1 (GoFile)</span> <span class="badge">Fast</span></button>'
-                
+                links_html += f"""
+                <div class="pro-dl-box" style="border-left: 4px solid #00e676;">
+                    <div class="pro-dl-header">
+                        <span class="pro-title">▶️ WATCH ONLINE (স্ট্রিমিং)</span>
+                        <span class="pro-status">● Live Stream</span>
+                    </div>
+                    <div class="pro-btn-grid">
+                        <button class="srv-btn srv-stream" onclick="secureLink(this, '{go_b64}')">
+                            <span>▶️ Play in Web Player</span> <span class="badge">No Buffering</span>
+                        </button>
+                    </div>
+                </div>"""
+
+            # Download Buttons
+            tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
+            btn_html = f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span>✈️ Telegram File</span> <span class="badge badge-blue">Safe</span></button>'
+            
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span>☁️ Server 2 (PixelDrain)</span> <span class="badge">HD</span></button>'
+                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span>☁️ PixelDrain</span> <span class="badge">Fast</span></button>'
+
+            if link.get('oshi_url'):
+                os_b64 = base64.b64encode(link['oshi_url'].encode('utf-8')).decode('utf-8')
+                btn_html += f'<button class="srv-btn srv-oshi" onclick="secureLink(this, \'{os_b64}\')"><span>🚀 Oshi.at Drive</span> <span class="badge badge-blue">Backup</span></button>'
+                
+            links_html += f"""
+            <div class="pro-dl-box">
+                <div class="pro-dl-header">
+                    <span class="pro-title">📥 {label}</span>
+                    <span class="pro-status">● Available</span>
+                </div>
+                <div class="pro-btn-grid">
+                    {btn_html}
+                </div>
+            </div>"""
                 
         else:
-            # যদি ম্যানুয়ালি কোনো টেক্সট লিংক (URL) দিয়ে থাকেন
+            # Manual Links
             url_str = link.get('url', '')
             encoded_url = base64.b64encode(url_str.encode('utf-8')).decode('utf-8')
-            btn_html = f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{encoded_url}\')"><span>🔗 Download Link</span> <span class="badge badge-blue">Direct</span></button>'
-
-        links_html += f"""
-        <div class="pro-dl-box">
-            <div class="pro-dl-header">
-                <span class="pro-title">📁 {label}</span>
-                <span class="pro-status">● Available</span>
-            </div>
-            <div class="pro-btn-grid">
-                {btn_html}
-            </div>
-        </div>"""
+            links_html += f"""
+            <div class="pro-dl-box">
+                <div class="pro-dl-header">
+                    <span class="pro-title">🔗 {label}</span>
+                    <span class="pro-status">● Available</span>
+                </div>
+                <div class="pro-btn-grid">
+                    <button class="srv-btn srv-tg" onclick="secureLink(this, '{encoded_url}')"><span>📥 Download Link</span> <span class="badge badge-blue">Direct</span></button>
+                </div>
+            </div>"""
 
     # 🔥 REVENUE SHARE LOGIC 🔥
     weighted_ad_list =[]
     
     if not user_ad_links_list:
-        weighted_ad_list = owner_ad_links_list if owner_ad_links_list else["https://google.com"]
+        weighted_ad_list = owner_ad_links_list if owner_ad_links_list else ["https://google.com"]
     elif not owner_ad_links_list:
         weighted_ad_list = user_ad_links_list
     else:
@@ -554,16 +596,21 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         .ss-container { margin: 25px 0; }
         .neon-ss { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 2px solid #ff00de; box-shadow: 0 0 15px rgba(255, 0, 222, 0.3); }
         
-        /* Modern Download Box CSS */
+        /* Modern UI Box CSS */
         .pro-dl-box { background: #1a1a24; border: 1px solid #2d2d3f; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: left; }
         .pro-dl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #2d2d3f; }
         .pro-title { font-size: 16px; font-weight: 700; color: #ffeb3b; }
         .pro-status { font-size: 11px; color: #00e676; font-weight: 600; background: rgba(0, 230, 118, 0.1); padding: 3px 8px; border-radius: 12px; }
         .pro-btn-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
         .srv-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; font-size: 14px; font-weight: 600; color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        
+        /* Buttons Color Gradients */
+        .srv-stream { background: linear-gradient(90deg, #00c6ff, #0072ff); }
         .srv-fast { background: linear-gradient(90deg, #d32f2f, #f44336); }
         .srv-mirror { background: linear-gradient(90deg, #f57c00, #ff9800); }
+        .srv-oshi { background: linear-gradient(90deg, #673ab7, #9c27b0); }
         .srv-tg { background: linear-gradient(90deg, #1976d2, #2196f3); }
+        
         .srv-btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
         .srv-btn:disabled { background: #444 !important; color: #aaa !important; cursor: not-allowed; transform: none; }
         .badge { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
@@ -592,11 +639,11 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         btn.disabled = true;
         
         let timer = setInterval(function() {{
-            btn.innerHTML = "⏳ Please Wait... " + timeLeft + "s";
+            btn.innerHTML = "⏳ Wait... " + timeLeft + "s";
             timeLeft--;
             if (timeLeft < 0) {{
                 clearInterval(timer);
-                btn.innerHTML = "🚀 Downloading...";
+                btn.innerHTML = "🚀 Loading...";
                 btn.style.background = "#00C853"; 
                 window.location.href = realUrl; 
             }}
@@ -610,7 +657,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v42 Shared - Pro UI) -->
+    <!-- Auto Redirect Code (v42 Shared) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
@@ -621,13 +668,13 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         <p>{overview[:350]}...</p>
         {ss_section}
         
-        <div class="instruction-box">ℹ️ <b>How to Download:</b> Select any server below. An ad will open, wait 5 seconds, and your download will start automatically.</div>
+        <div class="instruction-box">ℹ️ <b>How to Watch/Download:</b> Select any option below. An ad will open, wait 5 seconds, and you will be redirected automatically.</div>
         
         <div class="dl-container-area">
             {links_html}
         </div>
         
-        <div style="margin-top: 25px; border-top: 1px solid #333; padding-top: 20px;">
+        <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
             <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}" style="width: 100%; max-width: 300px; border-radius: 50px; border: 2px solid #333;"></a>
         </div>
         <div class="disclaimer">⚖️ <b>Disclaimer:</b> We do not host any files. Links are provided by third-party users. Protected by DMCA. Content may contain 18+ themes.</div>
@@ -754,6 +801,7 @@ async def start_cmd(client, message):
     name = message.from_user.first_name
     await add_user(uid, name) 
     
+    # 🔥 FILE DELIVERY SYSTEM (Start Payload)
     if len(message.command) > 1:
         payload = message.command[1]
         if payload.startswith("get-"):
@@ -787,6 +835,7 @@ async def start_cmd(client, message):
                 
                 await temp_msg.delete()
 
+                # 🔥 AUTO DELETE LOGIC
                 timer = await get_auto_delete_timer()
                 if timer > 0:
                     mins = timer // 60
@@ -826,7 +875,7 @@ async def start_cmd(client, message):
         "👉 `/manual`\n\n"
         "3️⃣ **ফাইল যোগ করা (File Store):**\n"
         "পোস্ট বানানোর সময় যখন লিংক চাইবে, তখন সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন।\n"
-        "_(বট ফাইলটি অটোমেটিক টেলিগ্রাম, GoFile, ও PixelDrain-এ আপলোড করে ৩টি রিয়েল লিংক তৈরি করবে!)_\n\n"
+        "_(বট ফাইলটি অটোমেটিক টেলিগ্রাম এবং ৩টি সার্ভারে আপলোড করবে!)_\n\n"
         "4️⃣ **ইনকাম সেটআপ (Ad Setup):**\n"
         "আপনার নিজের ডিরেক্ট লিংক সেট করতে:\n"
         "👉 `/setadlink <আপনার লিংক>`\n\n"
@@ -914,6 +963,7 @@ async def broadcast_msg(client, message):
         except: pass
     await msg.edit_text(f"✅ Broadcast Sent to **{count}** users.")
 
+# ---- USER COMMANDS ----
 @bot.on_message(filters.command("mysettings") & filters.private)
 async def mysettings_cmd(client, message):
     uid = message.from_user.id
@@ -940,7 +990,7 @@ async def set_ad(client, message):
 async def manual_post_cmd(client, message):
     uid = message.from_user.id
     if not await is_authorized(uid): return await message.reply_text("🚫 Not Authorized.")
-    user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots":[]}, "links":[], "state": "manual_title" }
+    user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots": []}, "links":[], "state": "manual_title" }
     await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:")
 
 @bot.on_message(filters.command("history") & filters.private)
@@ -1005,7 +1055,7 @@ async def edit_post_cmd(client, message):
 
 async def start_edit_session(uid, post, message):
     details = post.get("details")
-    current_links = post.get("links",[])
+    current_links = post.get("links", [])
     pid = post.get("_id")
     
     user_conversations[uid] = {
@@ -1044,7 +1094,7 @@ async def post_cmd(client, message):
         if m_type == "imdb":
             find_url = f"https://api.themoviedb.org/3/find/{m_id}?api_key={TMDB_API_KEY}&external_source=imdb_id"
             data = await fetch_url(find_url)
-            results = data.get("movie_results",[]) + data.get("tv_results",[])
+            results = data.get("movie_results", []) + data.get("tv_results",[])
             if results: m_type, m_id = results[0]['media_type'], results[0]['id']
             else: return await msg.edit_text("❌ IMDb ID not found in TMDB.")
 
@@ -1182,20 +1232,23 @@ async def text_handler(client, message):
                 
                 # 2. Download File to Bot Server with LIVE PROGRESS BAR
                 start_time = time.time()
-                last_update_time = [start_time]
+                last_update_time =[start_time]
                 file_path = await message.download(
                     progress=down_progress,
                     progress_args=(status_msg, start_time, last_update_time)
                 )
 
-                # 3. Upload to External Servers (2x FASTER CONCURRENT UPLOAD)
-                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল সার্ভারে আপলোড হচ্ছে...**\n_(একসাথে GoFile এবং PixelDrain এ আপলোড হচ্ছে, দয়া করে অপেক্ষা করুন)_")
+                # 3. Upload to External Servers (CONCURRENT + OSHI + WORKUPLOAD)
+                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল ৩টি সার্ভারে আপলোড হচ্ছে...**\n_(GoFile, PixelDrain, Oshi - একসাথে আপলোড হচ্ছে, দয়া করে অপেক্ষা করুন)_")
                 
-                gofile_url, pixeldrain_url = await asyncio.gather(
+                # 🔥 ম্যাজিক: একসাথে ৩টি সার্ভারে প্যারালাল আপলোড
+                gofile_url, pixeldrain_url, oshi_url = await asyncio.gather(
                     upload_to_gofile(file_path),
-                    upload_to_pixeldrain(file_path)
+                    upload_to_pixeldrain(file_path),
+                    upload_to_oshi(file_path)
                 )
 
+                # 🔥 STORAGE SAFE LOGIC: ফাইল আপলোডের পর বটের সার্ভার থেকে ডিলিট
                 if os.path.exists(file_path):
                     os.remove(file_path)
                 
@@ -1207,17 +1260,18 @@ async def text_handler(client, message):
                     "tg_url": tg_link,
                     "gofile_url": gofile_url,
                     "pixel_url": pixeldrain_url,
+                    "oshi_url": oshi_url,
                     "is_grouped": True
                 })
 
                 if convo.get("post_id"):
                      convo["state"] = "edit_mode"
                      btns = [[InlineKeyboardButton("➕ Add Another Link", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate Code", callback_data=f"gen_edit_{uid}")]]
-                     await message.reply_text(f"✅ **Saved 100% Genuinely!**\nটেলিগ্রাম + সার্ভার লিংক তৈরি হয়েছে।", reply_markup=InlineKeyboardMarkup(btns))
+                     await message.reply_text(f"✅ **Saved 100% Genuinely!**\nস্ট্রিমিং ও ডাউনলোড সার্ভার লিংক তৈরি হয়েছে।", reply_markup=InlineKeyboardMarkup(btns))
                 else:
                     convo["state"] = "ask_links"
                     buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
-                    await message.reply_text(f"✅ **Saved 100% Genuinely!**\nটেলিগ্রাম + সার্ভার লিংক তৈরি হয়েছে।\nTotal Uploads: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
+                    await message.reply_text(f"✅ **Saved 100% Genuinely!**\nস্ট্রিমিং ও ডাউনলোড সার্ভার লিংক তৈরি হয়েছে।\nTotal Uploads: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
 
             except Exception as e:
                 logger.error(f"File Auto-Mirror Error: {e}")
@@ -1419,5 +1473,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Ultimate Bot Started (v42 - Honest Auto Mirror + Pro UI)!")
+    print("🚀 Ultimate Bot Started (v42 - 4 Servers + Watch Online UI + Safe Storage)!")
     bot.run()
