@@ -51,7 +51,7 @@ OWNER_ID = int(os.getenv("OWNER_ID", 0))
 OWNER_USERNAME = os.getenv("OWNER_USERNAME", "admin") 
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
 
-# 🔥 নতুন: ফাইল স্টোর চ্যানেল (অবশ্যই -100 দিয়ে শুরু হতে হবে)
+# 🔥 ফাইল স্টোর চ্যানেল (অবশ্যই -100 দিয়ে শুরু হতে হবে)
 DB_CHANNEL_ID = int(os.getenv("DB_CHANNEL_ID", 0)) 
 
 # Check Variables
@@ -79,7 +79,7 @@ DEFAULT_OWNER_AD_LINKS =[
     "https://www.google.com",
     "https://www.bing.com"
 ]
-DEFAULT_USER_AD_LINKS = ["https://www.google.com", "https://www.bing.com"] 
+DEFAULT_USER_AD_LINKS =["https://www.google.com", "https://www.bing.com"] 
 
 user_conversations = {}
 
@@ -95,9 +95,11 @@ async def add_user(user_id, name):
         })
 
 async def is_authorized(user_id):
-    if user_id == OWNER_ID: return True
+    if user_id == OWNER_ID:
+        return True
     user = await users_col.find_one({"_id": user_id})
-    if not user: return False
+    if not user:
+        return False
     return user.get("authorized", False) and not user.get("banned", False)
 
 async def is_banned(user_id):
@@ -115,7 +117,6 @@ async def set_owner_ads_db(links):
         upsert=True
     )
 
-# 🔥 AUTO DELETE FUNCTIONS
 async def get_auto_delete_timer():
     data = await settings_col.find_one({"_id": "main_config"})
     return data.get("auto_delete_seconds", 600) if data else 600
@@ -128,14 +129,14 @@ async def set_auto_delete_timer_db(seconds):
     )
 
 async def auto_delete_task(client, chat_id, message_ids, delay):
-    if delay <= 0: return
+    if delay <= 0:
+        return
     await asyncio.sleep(delay)
     try:
         await client.delete_messages(chat_id, message_ids)
     except Exception as e:
         logger.error(f"Auto Delete Error: {e}")
 
-# 🔥 REVENUE SHARE FUNCTIONS
 async def get_admin_share():
     data = await settings_col.find_one({"_id": "main_config"})
     return data.get("admin_share_percent", 20) if data else 20
@@ -161,11 +162,21 @@ async def save_user_ads(user_id, links):
 async def get_all_users_count():
     return await users_col.count_documents({})
 
-# 🔥 Generate Short ID
+# 🔥 DYNAMIC API KEY MANAGER (FOR DOODSTREAM & STREAMTAPE)
+async def get_server_api(server_name):
+    data = await settings_col.find_one({"_id": "api_keys"})
+    return data.get(server_name) if data else None
+
+async def set_server_api(server_name, api_key):
+    await settings_col.update_one(
+        {"_id": "api_keys"}, 
+        {"$set": {server_name: api_key}}, 
+        upsert=True
+    )
+
 def generate_short_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# 🔥 Save Post Logic
 async def save_post_to_db(post_data, links):
     pid = post_data.get("post_id")
     if not pid:
@@ -181,11 +192,9 @@ async def save_post_to_db(post_data, links):
     await posts_col.replace_one({"_id": pid}, save_data, upsert=True)
     return pid
 
-# ---- RESOURCES URLS ----
 URL_FONT = "https://raw.githubusercontent.com/mahabub81/bangla-fonts/master/Kalpurush.ttf"
 URL_MODEL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
 
-# ---- ASYNC HTTP SESSION ----
 async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
     async with aiohttp.ClientSession() as session:
         try:
@@ -202,16 +211,16 @@ async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
     return None
 
 # ====================================================================
-# 🔥 AUTO MIRROR UPLOAD FUNCTIONS (3 FREE SERVERS)
+# 🔥 AUTO MIRROR UPLOAD FUNCTIONS (6 ADVANCED MULTI-SERVERS)
 # ====================================================================
 
-# 1. Upload to GoFile (Unlimited, Fast - Built-in Player for Streaming)
 async def upload_to_gofile(file_path):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get("https://api.gofile.io/servers") as resp:
                 data = await resp.json()
                 server = data['data']['servers'][0]['name']
+            
             url = f"https://{server}.gofile.io/contents/uploadfile"
             with open(file_path, 'rb') as f:
                 form = aiohttp.FormData()
@@ -221,10 +230,38 @@ async def upload_to_gofile(file_path):
                     if result['status'] == 'ok':
                         return result['data']['downloadPage']
     except Exception as e:
-        logger.error(f"Gofile Upload Error: {e}")
+        logger.error(f"GoFile Error: {e}")
     return None
 
-# 2. Upload to PixelDrain (High Speed, Free)
+async def upload_to_fileditch(file_path):
+    try:
+        url = "https://up1.fileditch.com/upload.php"
+        async with aiohttp.ClientSession() as session:
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('files[]', f, filename=os.path.basename(file_path))
+                async with session.post(url, data=form) as resp:
+                    result = await resp.json()
+                    return result['files'][0]['url']
+    except Exception as e:
+        logger.error(f"FileDitch Error: {e}")
+    return None
+
+async def upload_to_tmpfiles(file_path):
+    try:
+        url = "https://tmpfiles.org/api/v1/upload"
+        async with aiohttp.ClientSession() as session:
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                async with session.post(url, data=form) as resp:
+                    result = await resp.json()
+                    if result.get('status') == 'success':
+                        return result['data']['url'].replace("api/v1/download/", "")
+    except Exception as e:
+        logger.error(f"TmpFiles Error: {e}")
+    return None
+
 async def upload_to_pixeldrain(file_path):
     try:
         url = "https://pixeldrain.com/api/file"
@@ -237,24 +274,53 @@ async def upload_to_pixeldrain(file_path):
                     if result.get('success'):
                         return f"https://pixeldrain.com/u/{result['id']}"
     except Exception as e:
-        logger.error(f"PixelDrain Upload Error: {e}")
+        logger.error(f"PixelDrain Error: {e}")
     return None
 
-# 3. Upload to Oshi.at (Up to 5GB Anonymous)
-async def upload_to_oshi(file_path):
+async def upload_to_doodstream(file_path):
+    api_key = await get_server_api("doodstream")
+    if not api_key:
+        return None
     try:
-        url = "https://oshi.at"
         async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://doodapi.com/api/upload/server?key={api_key}") as resp:
+                data = await resp.json()
+                if data.get('msg') != 'OK':
+                    return None
+                upload_url = data['result']
+            
             with open(file_path, 'rb') as f:
                 form = aiohttp.FormData()
-                form.add_field('f', f, filename=os.path.basename(file_path))
-                async with session.post(url, data=form) as resp:
-                    text = await resp.text()
-                    match = re.search(r'(https://oshi\.at/[a-zA-Z0-9]+)', text)
-                    if match:
-                        return match.group(1)
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                form.add_field('api_key', api_key)
+                async with session.post(upload_url, data=form) as upload_resp:
+                    result = await upload_resp.json()
+                    if result.get('msg') == 'OK':
+                        return result['result'][0]['protected_embed']
     except Exception as e:
-        logger.error(f"Oshi Upload Error: {e}")
+        logger.error(f"DoodStream Error: {e}")
+    return None
+
+async def upload_to_streamtape(file_path):
+    api_credentials = await get_server_api("streamtape")
+    if not api_credentials:
+        return None 
+    try:
+        login_id, api_key = api_credentials.split(":")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://api.streamtape.com/file/ul?login={login_id}&key={api_key}") as resp:
+                data = await resp.json()
+                upload_url = data['result']['url']
+            
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                async with session.post(upload_url, data=form) as upload_resp:
+                    result = await upload_resp.json()
+                    if result.get('status') == 200:
+                        return result['result']['url']
+    except Exception as e:
+        logger.error(f"Streamtape Error: {e}")
     return None
 
 # ---- FLASK KEEP-ALIVE ----
@@ -262,7 +328,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v42 Bot Running (Bengali Help Added - Video Stream UI & Progress Bar)"
+    return "🤖 v42 Ultimate Bot Running (Multi-Server + SPA UI + Dynamic API Manager)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -275,45 +341,38 @@ def keep_alive_pinger():
         except:
             time.sleep(600)
 
-# ============================================================================
-# 🔥 AUTOMATIC RESOURCE DOWNLOADER
-# ============================================================================
 def setup_resources():
     font_name = "kalpurush.ttf"
     if not os.path.exists(font_name):
-        logger.info("⬇️ Downloading Bengali Font...")
         try:
             r = requests.get(URL_FONT)
             with open(font_name, "wb") as f:
                 f.write(r.content)
-        except Exception as e: logger.error(f"❌ Font Download Failed: {e}")
+        except Exception as e:
+            logger.error(f"Font Download Error: {e}")
 
     model_name = "haarcascade_frontalface_default.xml"
     if not os.path.exists(model_name):
-        logger.info("⬇️ Downloading Face Model...")
         try:
             r = requests.get(URL_MODEL)
             with open(model_name, "wb") as f:
                 f.write(r.content)
-        except Exception as e: logger.error(f"❌ Model Download Failed: {e}")
+        except Exception as e:
+            logger.error(f"Model Download Error: {e}")
 
 setup_resources()
 
-# ---- FONT HELPER FUNCTION ----
 def get_font(size=60, bold=False):
     try:
         if os.path.exists("kalpurush.ttf"):
             return ImageFont.truetype("kalpurush.ttf", size)
         font_file = "Poppins-Bold.ttf" if bold else "Poppins-Regular.ttf"
         if os.path.exists(font_file):
-             return ImageFont.truetype(font_file, size)
+            return ImageFont.truetype(font_file, size)
         return ImageFont.load_default()
-    except Exception as e:
+    except Exception:
         return ImageFont.load_default()
 
-# ====================================================================
-# 🔥 UPLOAD FUNCTION (Permanent Only)
-# ====================================================================
 def upload_image_core(file_content):
     try:
         url = "https://catbox.moe/user/api.php"
@@ -321,8 +380,10 @@ def upload_image_core(file_content):
         files = {"fileToUpload": ("image.png", file_content, "image/png")}
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.post(url, data=data, files=files, headers=headers, timeout=10, verify=False)
-        if response.status_code == 200: return response.text.strip()
-    except: pass
+        if response.status_code == 200:
+            return response.text.strip()
+    except:
+        pass
 
     try:
         url = "https://graph.org/upload"
@@ -332,9 +393,9 @@ def upload_image_core(file_content):
         if response.status_code == 200:
             json_data = response.json()
             return "https://graph.org" + json_data[0]["src"]
-    except: pass
+    except:
+        pass
 
-    logger.error("❌ ALL PERMANENT UPLOAD SERVERS FAILED.")
     return None
 
 def upload_to_catbox_bytes(img_bytes):
@@ -345,26 +406,30 @@ def upload_to_catbox_bytes(img_bytes):
         else:
             data = img_bytes
         return upload_image_core(data)
-    except: return None
+    except:
+        return None
 
 def upload_to_catbox(file_path):
     try:
         with open(file_path, "rb") as f:
             data = f.read()
         return upload_image_core(data)
-    except: return None
+    except:
+        return None
 
-# ---- TMDB & LINK EXTRACTION ----
 def extract_tmdb_id(text):
     tmdb_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', text)
     if tmdb_match:
         return tmdb_match.group(1), tmdb_match.group(2)
+    
     imdb_url_match = re.search(r'imdb\.com/title/(tt\d+)', text)
     if imdb_url_match:
         return "imdb", imdb_url_match.group(1)
+    
     imdb_id_match = re.search(r'(tt\d{6,})', text)
     if imdb_id_match:
         return "imdb", imdb_id_match.group(1)
+    
     return None, None
 
 async def search_tmdb(query):
@@ -374,20 +439,23 @@ async def search_tmdb(query):
         year = match.group(2) if match else None
         
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={name}&include_adult=true"
-        if year: url += f"&year={year}"
+        if year:
+            url += f"&year={year}"
         
         data = await fetch_url(url)
-        if not data: return[]
+        if not data:
+            return[]
         return[r for r in data.get("results", []) if r.get("media_type") in["movie", "tv"]][:15]
-    except: return[]
+    except:
+        return[]
 
 async def get_tmdb_details(media_type, media_id):
     url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}&append_to_response=credits,similar,images&include_image_language=en,null"
     return await fetch_url(url)
 
-# ---- DPASTE FUNCTION ----
 async def create_paste_link(content):
-    if not content: return None
+    if not content:
+        return None
     url = "https://dpaste.com/api/"
     data = {"content": content, "syntax": "html", "expiry_days": 14, "title": "Movie Post Code"}
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -396,15 +464,14 @@ async def create_paste_link(content):
         return link.strip()
     return None
 
-# ============================================================================
-# 🔥 FACE DETECTION & SMART BADGE
-# ============================================================================
 def get_smart_badge_position(pil_img):
     try:
         cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
         cascade_path = "haarcascade_frontalface_default.xml"
-        if not os.path.exists(cascade_path): return int(pil_img.height * 0.40) 
+        
+        if not os.path.exists(cascade_path):
+            return int(pil_img.height * 0.40) 
 
         face_cascade = cv2.CascadeClassifier(cascade_path)
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
@@ -413,12 +480,17 @@ def get_smart_badge_position(pil_img):
             lowest_y = 0
             for (x, y, w, h) in faces:
                 bottom_of_face = y + h
-                if bottom_of_face > lowest_y: lowest_y = bottom_of_face
+                if bottom_of_face > lowest_y:
+                    lowest_y = bottom_of_face
+            
             target_y = lowest_y + 40 
-            if target_y > (pil_img.height - 130): return 80 
+            if target_y > (pil_img.height - 130):
+                return 80 
             return target_y
-        else: return int(pil_img.height * 0.40) 
-    except: return 200
+        else:
+            return int(pil_img.height * 0.40) 
+    except:
+        return 200
 
 def apply_badge_to_poster(poster_bytes, text):
     try:
@@ -444,6 +516,7 @@ def apply_badge_to_poster(poster_bytes, text):
         cy = pos_y + padding_y - 12
         colors =["#FFEB3B", "#FF5722"]
         words = text.split()
+        
         if len(words) >= 2:
             draw.text((cx, cy), words[0], font=font, fill=colors[0])
             w1 = draw.textlength(words[0], font=font)
@@ -455,7 +528,8 @@ def apply_badge_to_poster(poster_bytes, text):
         base_img.save(img_buffer, format="PNG")
         img_buffer.seek(0)
         return img_buffer
-    except: return io.BytesIO(poster_bytes)
+    except:
+        return io.BytesIO(poster_bytes)
 
 # ============================================================================
 # 🔥 ADVANCED HTML GENERATOR (SINGLE PAGE APP UI)
@@ -468,7 +542,8 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
 
     lang_str = data.get('custom_language', 'Dual Audio').strip()
-    if data.get('is_manual'): genres_str = "Movie / Unknown" 
+    if data.get('is_manual'):
+        genres_str = "Movie / Unknown" 
     else:
         genres_list = [g['name'] for g in data.get('genres',[])]
         genres_str = ", ".join(genres_list) if genres_list else "Movie"
@@ -477,20 +552,40 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     server_list_html = ""
     for idx, link in enumerate(links):
         if link.get("is_grouped"):
+            
+            # 1. DoodStream
+            if link.get('dood_url'):
+                dood_b64 = base64.b64encode(link['dood_url'].encode('utf-8')).decode('utf-8')
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{dood_b64}\')" style="background: #F57C00;">🎬 Watch on DoodStream (Premium)</button>'
+            
+            # 2. Streamtape
+            if link.get('stape_url'):
+                stape_b64 = base64.b64encode(link['stape_url'].encode('utf-8')).decode('utf-8')
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{stape_b64}\')" style="background: #E91E63;">🎥 Streamtape (HD Stream)</button>'
+
+            # 3. GoFile
             if link.get('gofile_url'):
                 go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ Watch Online (স্ট্রিমিং)</button>'
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ Watch Online (Fast)</button>'
             
+            # 4. Telegram Server
             tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
             server_list_html += f'<button class="final-server-btn tg-btn" onclick="goToLink(\'{tg_b64}\')">✈️ Telegram Fast Server</button>'
             
+            # 5. FileDitch
+            if link.get('fileditch_url'):
+                fd_b64 = base64.b64encode(link['fileditch_url'].encode('utf-8')).decode('utf-8')
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{fd_b64}\')" style="background: #009688;">☁️ Direct Cloud (15GB Max)</button>'
+
+            # 6. TmpFiles
+            if link.get('tmpfiles_url'):
+                tmp_b64 = base64.b64encode(link['tmpfiles_url'].encode('utf-8')).decode('utf-8')
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{tmp_b64}\')" style="background: #6A1B9A;">🚀 High-Speed Server 1</button>'
+
+            # 7. PixelDrain
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{px_b64}\')">☁️ Cloud Download 1</button>'
-
-            if link.get('oshi_url'):
-                os_b64 = base64.b64encode(link['oshi_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{os_b64}\')">🚀 Backup Server</button>'
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{px_b64}\')" style="background: #2E7D32;">⚡ Fast Server 2</button>'
         else:
             url_str = link.get('url', '')
             encoded_url = base64.b64encode(url_str.encode('utf-8')).decode('utf-8')
@@ -507,11 +602,13 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         total_slots = 100
         admin_slots = int(admin_share_percent)
         user_slots = total_slots - admin_slots
-        for _ in range(admin_slots): weighted_ad_list.append(random.choice(owner_ad_links_list))
-        for _ in range(user_slots): weighted_ad_list.append(random.choice(user_ad_links_list))
+        for _ in range(admin_slots):
+            weighted_ad_list.append(random.choice(owner_ad_links_list))
+        for _ in range(user_slots):
+            weighted_ad_list.append(random.choice(user_ad_links_list))
+            
     random.shuffle(weighted_ad_list) 
 
-    # 🔥 ISOLATED CSS (PREVENTS BLOGGER THEME CONFLICTS)
     style_html = """
     <style>
         .app-wrapper { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f13; border: 1px solid #2a2a35; border-radius: 12px; max-width: 600px; margin: 20px auto; padding: 20px; color: #fff; box-sizing: border-box; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -521,21 +618,18 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         .movie-title { color: #00d2ff; font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 10px; line-height: 1.4; }
         .movie-plot { color: #bbb; font-size: 13px; text-align: justify; margin-bottom: 20px; line-height: 1.6; }
         
-        /* Main Action Buttons */
         .action-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
         .main-btn { width: 100%; padding: 16px; font-size: 16px; font-weight: bold; text-transform: uppercase; color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; display: flex; justify-content: center; align-items: center; gap: 10px; letter-spacing: 1px; }
         .btn-watch { background: linear-gradient(90deg, #ff0844 0%, #ffb199 100%); box-shadow: 0 4px 15px rgba(255, 8, 68, 0.4); }
         .btn-download { background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; box-shadow: 0 4px 15px rgba(0, 201, 255, 0.4); }
         .main-btn:disabled { filter: grayscale(1); cursor: not-allowed; opacity: 0.8; }
         
-        /* Links View (The Download Page) */
         #view-links { display: none; background: #1a1a24; padding: 20px; border-radius: 10px; border: 1px solid #333; text-align: center; animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .success-title { color: #00e676; font-size: 18px; margin-bottom: 15px; border-bottom: 1px dashed #444; padding-bottom: 10px; }
+        .success-title { color: #00e676; font-size: 18px; margin-bottom: 15px; border-bottom: 1px dashed #444; padding-bottom: 10px; font-weight: bold; }
         
-        /* Final Server List Buttons */
         .server-list { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; }
-        .final-server-btn { width: 100%; padding: 14px; font-size: 14px; font-weight: 600; color: #fff; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .final-server-btn { width: 100%; padding: 14px; font-size: 14px; font-weight: 600; color: #fff; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .stream-btn { background: #E50914; }
         .tg-btn { background: #0088cc; }
         .cloud-btn { background: #4caf50; }
@@ -546,23 +640,18 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     </style>
     """
 
-    # 🔥 JAVASCRIPT LOGIC
     script_html = f"""
     <script>
     const AD_LINKS = {json.dumps(weighted_ad_list)};
     
     function startUnlock(btn, type) {{
-        // 1. Open Ad
         let randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
         window.open(randomAd, '_blank'); 
         
-        // 2. Disable buttons and start timer
         let buttons = document.querySelectorAll('.main-btn');
         buttons.forEach(b => b.disabled = true);
         
         let timeLeft = 5;
-        let originalText = btn.innerHTML;
-        
         let timer = setInterval(function() {{
             btn.innerHTML = "⏳ Please Wait... " + timeLeft + "s";
             timeLeft--;
@@ -570,14 +659,12 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
             if (timeLeft < 0) {{
                 clearInterval(timer);
                 btn.innerHTML = "✅ Unlocked!";
-                
-                // 3. Switch View (Hide Details, Show Servers)
                 document.getElementById('view-details').style.display = 'none';
                 document.getElementById('view-links').style.display = 'block';
             }}
         }}, 1000); 
     }}
-
+    
     function goToLink(b64Url) {{
         let realUrl = atob(b64Url);
         window.location.href = realUrl;
@@ -589,8 +676,6 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     <!-- ADVANCED SINGLE PAGE APP BY BOT -->
     {style_html}
     <div class="app-wrapper">
-        
-        <!-- MAIN LANDING VIEW -->
         <div id="view-details">
             <div class="poster-box">
                 <img src="{poster}" alt="Poster">
@@ -602,7 +687,6 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
                 ℹ️ <b>How to Download:</b> Click any button below, wait 5 seconds, and the Server List will unlock automatically.
             </div>
             
-            <!-- THE TWO MAIN BUTTONS -->
             <div class="action-grid">
                 <button class="main-btn btn-watch" onclick="startUnlock(this, 'watch')">
                     ▶️ WATCH NOW
@@ -612,13 +696,11 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
                 </button>
             </div>
         </div>
-
-        <!-- HIDDEN SERVER LIST VIEW (OPENS AFTER 5 SECONDS) -->
+        
         <div id="view-links">
             <div class="success-title">✅ Links Unlocked Successfully!</div>
-            <p style="font-size: 13px; color: #bbb;">Please select a server below to stream or download your file. All servers are fast and secure.</p>
+            <p style="font-size: 13px; color: #bbb;">Please select a server below to stream or download your file.</p>
             
-            <!-- List by List Server Buttons -->
             <div class="server-list">
                 {server_list_html}
             </div>
@@ -627,12 +709,11 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         <div class="promo-box">
             <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}"></a>
         </div>
-        
     </div>
     {script_html}
-    """    
-    
-    # ---- IMAGE & CAPTION GENERATOR ----
+    """
+
+# ---- IMAGE & CAPTION GENERATOR ----
 def generate_formatted_caption(data, pid=None):
     title = data.get("title") or data.get("name") or "N/A"
     is_adult = data.get('adult', False) or data.get('force_adult', False)
@@ -650,21 +731,28 @@ def generate_formatted_caption(data, pid=None):
     
     overview = data.get("overview", "No plot available.")
     caption = f"🎬 **{title} ({year})**\n"
-    if pid: caption += f"🆔 **ID:** `{pid}` (Use to Edit)\n\n"
+    if pid:
+        caption += f"🆔 **ID:** `{pid}` (Use to Edit)\n\n"
     
     if is_adult:
         caption += "⚠️ **WARNING: 18+ Content.**\n_Suitable for mature audiences only._\n\n"
+    
     if not data.get('is_manual'):
         caption += f"**🎭 Genres:** {genres}\n**🗣️ Language:** {language}\n**⭐ Rating:** {rating}\n\n"
+        
     caption += f"**📝 Plot:** _{overview[:300]}..._\n\n⚠️ _Disclaimer: Informational post only._"
     return caption
 
 def generate_image(data):
     try:
-        if data.get('manual_poster_url'): poster_url = data.get('manual_poster_url')
-        else: poster_url = f"https://image.tmdb.org/t/p/w500{data['poster_path']}" if data.get('poster_path') else None
+        if data.get('manual_poster_url'):
+            poster_url = data.get('manual_poster_url')
+        else:
+            poster_url = f"https://image.tmdb.org/t/p/w500{data['poster_path']}" if data.get('poster_path') else None
         
-        if not poster_url: return None, None
+        if not poster_url:
+            return None, None
+            
         poster_bytes = requests.get(poster_url, timeout=10, verify=False).content
         is_adult = data.get('adult', False) or data.get('force_adult', False)
         
@@ -673,35 +761,47 @@ def generate_image(data):
             poster_bytes = badge_io.getvalue()
 
         poster_img = Image.open(io.BytesIO(poster_bytes)).convert("RGBA").resize((400, 600))
-        if is_adult: poster_img = poster_img.filter(ImageFilter.GaussianBlur(20))
+        if is_adult:
+            poster_img = poster_img.filter(ImageFilter.GaussianBlur(20))
 
         bg_img = Image.new('RGBA', (1280, 720), (10, 10, 20))
         backdrop = None
+        
         if data.get('backdrop_path') and not data.get('is_manual'):
             try:
                 bd_url = f"https://image.tmdb.org/t/p/w1280{data['backdrop_path']}"
                 bd_bytes = requests.get(bd_url, timeout=10, verify=False).content
                 backdrop = Image.open(io.BytesIO(bd_bytes)).convert("RGBA").resize((1280, 720))
-            except: pass
+            except:
+                pass
         
-        if not backdrop: backdrop = poster_img.resize((1280, 720))
+        if not backdrop:
+            backdrop = poster_img.resize((1280, 720))
+            
         backdrop = backdrop.filter(ImageFilter.GaussianBlur(10))
         bg_img = Image.alpha_composite(backdrop, Image.new('RGBA', (1280, 720), (0, 0, 0, 150))) 
         bg_img.paste(poster_img, (50, 60), poster_img)
         draw = ImageDraw.Draw(bg_img)
+        
         f_bold = get_font(size=36, bold=True)
         f_reg = get_font(size=24, bold=False)
 
         title = data.get("title") or data.get("name")
         year = (data.get("release_date") or data.get("first_air_date") or "----")[:4]
-        if data.get('is_manual'): year = ""
-        if is_adult: title += " (18+)"
+        
+        if data.get('is_manual'):
+            year = ""
+        if is_adult:
+            title += " (18+)"
 
         draw.text((480, 80), f"{title} {year}", font=f_bold, fill="white", stroke_width=1, stroke_fill="black")
+        
         if not data.get('is_manual'):
             draw.text((480, 140), f"⭐ {data.get('vote_average', 0):.1f}/10", font=f_reg, fill="#00e676")
-            if is_adult: draw.text((480, 180), "⚠️ RESTRICTED CONTENT", font=get_font(18), fill="#FF5252")
-            else: draw.text((480, 180), " | ".join([g["name"] for g in data.get("genres",[])]), font=get_font(18), fill="#00bcd4")
+            if is_adult:
+                draw.text((480, 180), "⚠️ RESTRICTED CONTENT", font=get_font(18), fill="#FF5252")
+            else:
+                draw.text((480, 180), " | ".join([g["name"] for g in data.get("genres",[])]), font=get_font(18), fill="#00bcd4")
         
         overview = data.get("overview", "")
         lines = [overview[i:i+80] for i in range(0, len(overview), 80)][:6]
@@ -714,9 +814,10 @@ def generate_image(data):
         img_buffer.name = "poster.png"
         bg_img.save(img_buffer, format="PNG")
         img_buffer.seek(0)
+        
         return img_buffer, poster_bytes 
     except Exception as e:
-        logger.error(f"Img Gen Error: {e}")
+        logger.error(f"Generate Image Error: {e}")
         return None, None
 
 # ---- BOT INIT ----
@@ -726,9 +827,6 @@ except Exception as e:
     logger.critical(f"Bot Init Error: {e}")
     exit(1)
 
-# ---- BOT COMMANDS ----
-
-# 🔥 HELPER FOR CAPTION GENERATION
 def generate_file_caption(details):
     title = details.get("title") or details.get("name") or "Unknown"
     year = (details.get("release_date") or details.get("first_air_date") or "----")[:4]
@@ -740,325 +838,314 @@ def generate_file_caption(details):
     else:
         genres = ", ".join([g['name'] for g in details.get('genres', [])][:3])
         lang = details.get("custom_language") or "Dual Audio"
-    
+        
     return f"🎬 **{title} ({year})**\n━━━━━━━━━━━━━━━━━━━━━━━\n⭐ Rating: {rating}\n🎭 Genre: {genres}\n🔊 Language: {lang}\n\n🤖 Join: @{(bot.me).username}"
 
-# 🔥 UPDATED START COMMAND
 @bot.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     uid = message.from_user.id
     name = message.from_user.first_name
     await add_user(uid, name) 
     
-    # 🔥 FILE DELIVERY SYSTEM (Start Payload)
     if len(message.command) > 1:
         payload = message.command[1]
         if payload.startswith("get-"):
             if await is_banned(uid):
                 return await message.reply_text("🚫 **Access Denied:** You are banned.")
-
+                
             try:
-                if DB_CHANNEL_ID == 0:
-                    return await message.reply_text("❌ System Error: DB_CHANNEL_ID not set.")
-
                 msg_id = int(payload.split("-")[1])
                 temp_msg = await message.reply_text("🔍 **Searching File...**")
                 
                 post = await posts_col.find_one({"links.tg_url": {"$regex": f"get-{msg_id}"}})
                 if not post:
                     post = await posts_col.find_one({"links.url": {"$regex": f"get-{msg_id}"}})
-                
-                final_caption = ""
+                    
                 if post and "details" in post:
                     final_caption = generate_file_caption(post["details"])
                 else:
                     final_caption = f"🎥 **Here is your file!**\n\n🤖 Powered by {client.me.mention}"
-
+                
                 file_msg = await client.copy_message(
-                    chat_id=uid,
-                    from_chat_id=DB_CHANNEL_ID,
-                    message_id=msg_id,
-                    caption=final_caption,
+                    chat_id=uid, 
+                    from_chat_id=DB_CHANNEL_ID, 
+                    message_id=msg_id, 
+                    caption=final_caption, 
                     protect_content=False
                 )
-                
                 await temp_msg.delete()
 
-                # 🔥 AUTO DELETE LOGIC
                 timer = await get_auto_delete_timer()
                 if timer > 0:
-                    mins = timer // 60
-                    time_str = f"{mins} মিনিট" if mins > 0 else f"{timer} সেকেন্ড"
-
+                    time_str = f"{timer//60} মিনিট" if timer >= 60 else f"{timer} সেকেন্ড"
                     warning_msg = await message.reply_text(
-                        f"⚠️ **সতর্কবার্তা:** কপিরাইট এড়াতে এই ফাইলটি **{time_str}** পর ডিলিট হয়ে যাবে!\n\n📥 দয়া করে এখনই ফাইলটি **Save** বা **Forward** করে রাখুন।",
+                        f"⚠️ **সতর্কবার্তা:** কপিরাইট এড়াতে এই ফাইলটি **{time_str}** পর ডিলিট হয়ে যাবে!\n\n📥 দয়া করে এখনই ফাইলটি Save করে রাখুন।", 
                         quote=True
                     )
-                    
                     asyncio.create_task(auto_delete_task(client, uid,[file_msg.id, warning_msg.id], timer))
-
                 return 
             except Exception as e:
-                logger.error(f"File Fetch Error: {e}")
-                return await message.reply_text("❌ **File Not Found!**\nIt might have been deleted or removed.")
+                return await message.reply_text("❌ **File Not Found!**")
 
     user_conversations.pop(uid, None)
     
     if not await is_authorized(uid):
-        btn = [[InlineKeyboardButton("💬 Contact Admin", url=f"https://t.me/{OWNER_USERNAME}")]]
         return await message.reply_text(
-            "⚠️ **অ্যাক্সেস নেই (Access Denied)**\n\nএই বটটি ব্যবহার করতে এডমিনের অনুমতির প্রয়োজন।\nদয়া করে এডমিনের সাথে যোগাযোগ করুন।",
-            reply_markup=InlineKeyboardMarkup(btn)
+            "⚠️ **অ্যাক্সেস নেই**\n\nএই বটটি ব্যবহার করতে এডমিনের অনুমতির প্রয়োজন।", 
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contact Admin", url=f"https://t.me/{OWNER_USERNAME}")]])
         )
 
     welcome_text = (
         f"👋 **স্বাগতম {name}!**\n\n"
-        "🎬 **Movie & Series Bot (v42)**-এ আপনাকে স্বাগতম।\n"
-        "নিচে বটের ব্যবহারের নিয়মাবলী দেওয়া হলো:\n\n"
-        "📌 **কিভাবে ব্যবহার করবেন?**\n\n"
-        "1️⃣ **অটোমেটিক পোস্ট (Auto Post):**\n"
-        "যেকোনো মুভি বা সিরিজ খুঁজতে লিখুন:\n"
-        "👉 `/post <নাম>` (যেমন: `/post Avatar`)\n\n"
-        "2️⃣ **ম্যানুয়াল পোস্ট (Manual Post):**\n"
-        "মুভি খুঁজে না পেলে বা নিজের মতো বানাতে:\n"
-        "👉 `/manual`\n\n"
-        "3️⃣ **ফাইল যোগ করা (File Store):**\n"
-        "পোস্ট বানানোর সময় যখন লিংক চাইবে, তখন সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন।\n"
-        "_(বট ফাইলটি অটোমেটিক টেলিগ্রাম এবং ৩টি সার্ভারে আপলোড করবে!)_\n\n"
-        "4️⃣ **ইনকাম সেটআপ (Ad Setup):**\n"
-        "আপনার নিজের ডিরেক্ট লিংক সেট করতে:\n"
-        "👉 `/setadlink <আপনার লিংক>`\n\n"
-        "5️⃣ **পোস্ট এডিট (Edit):**\n"
-        "পুরানো পোস্ট এডিট করতে:\n"
-        "👉 `/edit <নাম বা ID>`\n\n"
-        "🚀 **শুরু করতে যেকোনো একটি কমান্ড দিন!**"
+        "🎬 **Movie & Series Bot (v42 Advanced)**-এ আপনাকে স্বাগতম।\n"
+        "📌 **কিভাবে ব্যবহার করবেন?**\n"
+        "👉 `/post <নাম>` - অটোমেটিক পোস্ট করতে\n"
+        "👉 `/manual` - ম্যানুয়াল পোস্ট করতে\n"
+        "👉 `/setapi doodstream <key>` - আর্নিং সাইট সেট করতে (Only Admin)\n"
+        "👉 `/setadlink <লিংক>` - নিজের অ্যাড লিংক সেট করতে\n"
+        "👉 `/edit <নাম বা ID>` - পোস্ট এডিট করতে"
     )
     await message.reply_text(welcome_text)
 
+# --- ADMIN COMMANDS ---
 @bot.on_message(filters.command("auth") & filters.user(OWNER_ID))
 async def auth_user(client, message):
     try:
         target_id = int(message.command[1])
         await users_col.update_one({"_id": target_id}, {"$set": {"authorized": True, "banned": False}}, upsert=True)
-        await message.reply_text(f"✅ User {target_id} is now **AUTHORIZED**.")
-        await client.send_message(target_id, "✅ **অভিনন্দন!** আপনাকে বট ব্যবহারের অনুমতি দেওয়া হয়েছে।\nএখন `/start` দিয়ে নিয়মাবলী দেখে নিন।")
-    except: await message.reply_text("❌ Usage: `/auth 123456789`")
+        await message.reply_text(f"✅ User {target_id} is now AUTHORIZED.")
+    except:
+        await message.reply_text("❌ Usage: `/auth 123456789`")
 
 @bot.on_message(filters.command("ban") & filters.user(OWNER_ID))
 async def ban_user(client, message):
     try:
         target_id = int(message.command[1])
         await users_col.update_one({"_id": target_id}, {"$set": {"banned": True}})
-        await message.reply_text(f"🚫 User {target_id} has been **BANNED**.")
-    except: await message.reply_text("❌ Usage: `/ban 123456789`")
-
-@bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
-async def bot_stats(client, message):
-    total = await get_all_users_count()
-    total_posts = await posts_col.count_documents({})
-    admin_share = await get_admin_share()
-    auto_del = await get_auto_delete_timer()
-    await message.reply_text(f"📊 **BOT STATISTICS**\n\n👥 **Total Users:** {total}\n📂 **Total Posts Saved:** {total_posts}\n💰 **Admin Share:** {admin_share}%\n⏳ **Auto Delete:** {auto_del}s\n✅ **System:** Online")
+        await message.reply_text(f"🚫 User {target_id} is now BANNED.")
+    except:
+        await message.reply_text("❌ Usage: `/ban 123456789`")
 
 @bot.on_message(filters.command("setownerads") & filters.user(OWNER_ID))
 async def set_owner_ads_cmd(client, message):
     if len(message.command) > 1:
-        links = message.text.split(None, 1)[1].split()
-        valid =[l for l in links if l.startswith("http")]
+        valid =[l for l in message.text.split(None, 1)[1].split() if l.startswith("http")]
         if valid:
             await set_owner_ads_db(valid)
-            await message.reply_text(f"✅ **Owner Ads Updated!** ({len(valid)} links)")
-        else: await message.reply_text("❌ Invalid Links.")
-    else: await message.reply_text("⚠️ Usage: `/setownerads link1 link2`")
+            await message.reply_text(f"✅ Owner Ads Updated! ({len(valid)} links)")
+        else:
+            await message.reply_text("❌ No valid links found.")
+    else:
+        await message.reply_text("⚠️ Usage: `/setownerads link1 link2`")
 
 @bot.on_message(filters.command("setshare") & filters.user(OWNER_ID))
 async def set_share_cmd(client, message):
     try:
-        if len(message.command) < 2:
-            return await message.reply_text("⚠️ Usage: `/setshare 20`\n(Sets Admin traffic to 20%, User to 80%)")
-        
         percent = int(message.command[1])
         if 0 <= percent <= 100:
             await set_admin_share_db(percent)
-            await message.reply_text(f"✅ **Revenue Share Updated!**\n\n👮 Admin Traffic: **{percent}%**\n👤 User Traffic: **{100-percent}%**")
-        else:
-            await message.reply_text("⚠️ Please enter a number between 0 and 100.")
-    except Exception as e:
-        await message.reply_text(f"❌ Error: {e}")
+            await message.reply_text(f"✅ Share Updated: Admin **{percent}%**")
+    except:
+        await message.reply_text("⚠️ Usage: `/setshare 20`")
 
 @bot.on_message(filters.command("setdel") & filters.user(OWNER_ID))
 async def set_auto_delete_cmd(client, message):
     try:
-        if len(message.command) < 2:
-            current = await get_auto_delete_timer()
-            return await message.reply_text(f"⚠️ Usage: `/setdel 600` (Seconds)\n\n🕒 **Current Timer:** {current} seconds")
-        
         seconds = int(message.command[1])
         await set_auto_delete_timer_db(seconds)
-        await message.reply_text(f"✅ **Auto Delete Timer Updated!**\n\nFiles will be deleted after **{seconds} seconds**.")
-    except ValueError:
-        await message.reply_text("❌ Please enter a valid number (seconds).")
+        await message.reply_text(f"✅ Timer Updated: **{seconds} seconds**")
+    except:
+        await message.reply_text("⚠️ Usage: `/setdel 600`")
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_msg(client, message):
-    if not message.reply_to_message: return await message.reply_text("⚠️ Reply to a message to broadcast.")
+    if not message.reply_to_message:
+        return await message.reply_text("⚠️ Reply to a message.")
+    
     msg = await message.reply_text("⏳ Broadcasting...")
     count = 0
+    
     async for user in users_col.find({}):
         try:
             await message.reply_to_message.copy(user["_id"])
             count += 1
             await asyncio.sleep(0.1) 
-        except: pass
+        except:
+            pass
+            
     await msg.edit_text(f"✅ Broadcast Sent to **{count}** users.")
 
-# ---- USER COMMANDS ----
-@bot.on_message(filters.command("mysettings") & filters.private)
-async def mysettings_cmd(client, message):
-    uid = message.from_user.id
-    if not await is_authorized(uid): return
-    my_links = await get_user_ads(uid)
-    links_str = "\n".join([f"{i+1}. {l}" for i, l in enumerate(my_links)])
-    await message.reply_text(f"⚙️ **MY SETTINGS**\n\n🔗 **Your Ad Links:**\n{links_str}", disable_web_page_preview=True)
+# 🔥 API KEY MANAGER COMMAND (NEW)
+@bot.on_message(filters.command("setapi") & filters.user(OWNER_ID))
+async def set_api_command(client, message):
+    try:
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            return await message.reply_text(
+                "⚠️ **Format:** `/setapi <server_name> <api_key>`\n"
+                "**Supported Servers:** `doodstream`, `streamtape`\n"
+                "For Streamtape use format: `login_id:api_key`"
+            )
+        
+        server_name = parts[1].lower()
+        api_key = parts[2].strip()
+        
+        if server_name not in ["doodstream", "streamtape"]:
+            return await message.reply_text("❌ Unsupported server.")
+            
+        await set_server_api(server_name, api_key)
+        await message.reply_text(f"✅ **{server_name.title()}** API Key Saved successfully!")
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {e}")
+
+# --- USER COMMANDS ---
+@bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
+async def bot_stats(client, message):
+    total = await get_all_users_count()
+    total_posts = await posts_col.count_documents({})
+    admin_share = await get_admin_share()
+    await message.reply_text(
+        f"📊 **BOT STATS**\n"
+        f"👥 Users: {total}\n"
+        f"📁 Posts: {total_posts}\n"
+        f"💰 Admin Share: {admin_share}%"
+    )
 
 @bot.on_message(filters.command("setadlink") & filters.private)
 async def set_ad(client, message):
     uid = message.from_user.id
-    if not await is_authorized(uid): return
+    if not await is_authorized(uid):
+        return
+        
     if len(message.command) > 1:
-        raw_links = message.text.split(None, 1)[1].split()
-        valid_links =[l for l in raw_links if l.startswith("http")]
+        valid_links =[l for l in message.text.split(None, 1)[1].split() if l.startswith("http")]
         if valid_links:
             await save_user_ads(uid, valid_links)
-            links_str = "\n".join([f"{i+1}. {l}" for i, l in enumerate(valid_links)])
-            await message.reply_text(f"✅ **Ad Links Saved!**\n\n{links_str}")
-        else: await message.reply_text("⚠️ Invalid Links.")
-    else: await message.reply_text("⚠️ Usage Example:\n`/setadlink https://site1.com https://site2.com`")
+            await message.reply_text("✅ Ad Links Saved!")
+    else:
+        await message.reply_text("⚠️ Usage: `/setadlink https://site.com`")
 
 @bot.on_message(filters.command("manual") & filters.private)
 async def manual_post_cmd(client, message):
     uid = message.from_user.id
-    if not await is_authorized(uid): return await message.reply_text("🚫 Not Authorized.")
-    user_conversations[uid] = { "details": {"is_manual": True, "manual_screenshots": []}, "links":[], "state": "manual_title" }
+    if not await is_authorized(uid):
+        return
+        
+    user_conversations[uid] = {
+        "details": {"is_manual": True, "manual_screenshots": []},
+        "links":[],
+        "state": "manual_title"
+    }
     await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:")
 
 @bot.on_message(filters.command("history") & filters.private)
 async def history_cmd(client, message):
     uid = message.from_user.id
-    if not await is_authorized(uid): return
-
-    cursor = posts_col.find({}).sort("updated_at", -1).limit(10)
-    posts = await cursor.to_list(length=10)
-    
-    if not posts: return await message.reply_text("❌ No history found.")
-    
-    text = "📜 **Your Last 10 Posts:**\n\n"
+    if not await is_authorized(uid):
+        return
+        
+    posts = await posts_col.find({}).sort("updated_at", -1).limit(10).to_list(10)
+    if not posts:
+        return await message.reply_text("❌ No history found.")
+        
+    text = "📜 **Last 10 Posts:**\n\n"
     for p in posts:
-        title = p["details"].get("title") or p["details"].get("name") or "Unknown"
-        pid = p["_id"]
-        text += f"🎬 **{title}**\n🆔 `{pid}`\n\n"
-    
+        text += f"🎬 {p['details'].get('title', 'Unknown')} (ID: `{p['_id']}`)\n"
     await message.reply_text(text)
 
 @bot.on_message(filters.command("edit") & filters.private)
 async def edit_post_cmd(client, message):
     uid = message.from_user.id
-    if not await is_authorized(uid): return
-    
+    if not await is_authorized(uid):
+        return
+        
     if len(message.command) < 2:
-        return await message.reply_text("⚠️ Usage: `/edit <Name OR ID>`\nExample: `/edit Avatar`")
-    
+        return await message.reply_text("⚠️ Usage: `/edit <Name OR ID>`")
+        
     query = message.text.split(" ", 1)[1].strip()
-    msg = await message.reply_text(f"🔍 Searching for `{query}`...")
+    msg = await message.reply_text("🔍 Searching...")
     
-    try:
-        post = await posts_col.find_one({"_id": query})
+    post = await posts_col.find_one({"_id": query})
+    if not post:
+        results = await posts_col.find({"details.title": {"$regex": query, "$options": "i"}}).to_list(10)
+        if not results:
+            results = await posts_col.find({"details.name": {"$regex": query, "$options": "i"}}).to_list(10)
         
-        if not post:
-            cursor = posts_col.find({"details.title": {"$regex": query, "$options": "i"}})
-            results = await cursor.to_list(length=10)
+        if not results:
+            return await msg.edit_text("❌ Not found.")
             
-            if not results:
-                cursor = posts_col.find({"details.name": {"$regex": query, "$options": "i"}})
-                results = await cursor.to_list(length=10)
-                
-            if not results: 
-                return await msg.edit_text("❌ No posts found with that name/ID.\nMake sure you have saved it at least once.")
+        if len(results) > 1:
+            btns = [[InlineKeyboardButton(f"{r['details'].get('title')} ({r['_id']})", callback_data=f"forcedit_{r['_id']}_{uid}")] for r in results]
+            return await msg.edit_text("👇 **Select Post:**", reply_markup=InlineKeyboardMarkup(btns))
             
-            if len(results) > 1:
-                btns = []
-                for r in results:
-                    title = r["details"].get("title") or r["details"].get("name")
-                    pid = r["_id"]
-                    btns.append([InlineKeyboardButton(f"{title} ({pid})", callback_data=f"forcedit_{pid}_{uid}")])
-                return await msg.edit_text("👇 **Select Post to Edit:**", reply_markup=InlineKeyboardMarkup(btns))
-            
-            post = results[0] 
-
-        await msg.delete() 
-        await start_edit_session(uid, post, message)
+        post = results[0] 
         
-    except Exception as e:
-        logger.error(f"Search Error: {e}")
-        await msg.edit_text("❌ An error occurred while searching.")
+    await msg.delete() 
+    await start_edit_session(uid, post, message)
 
 async def start_edit_session(uid, post, message):
-    details = post.get("details")
-    current_links = post.get("links", [])
-    pid = post.get("_id")
-    
     user_conversations[uid] = {
-        "details": details,
-        "links": current_links,
+        "details": post["details"],
+        "links": post.get("links",[]),
         "state": "edit_mode",
-        "post_id": pid
+        "post_id": post["_id"]
     }
     
-    links_text = "\n".join([f"{i+1}. {l['label']}" for i, l in enumerate(current_links)])
-    msg_txt = f"📝 **Editing:** {details.get('title') or details.get('name')}\n🆔 **ID:** `{pid}`\n\n🔗 **Current Links:**\n{links_text}\n\n👇 **What to do?**"
+    btns = [[InlineKeyboardButton("➕ Add New Link", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]
+    ]
+    txt = f"📝 **Editing:** {post['details'].get('title')}\n🆔 `{post['_id']}`\n\n👇 **What to do?**"
     
-    btns = [[InlineKeyboardButton("➕ Add New Link", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]]
-    
-    if isinstance(message, Message): await message.reply_text(msg_txt, reply_markup=InlineKeyboardMarkup(btns))
-    else: await message.edit_text(msg_txt, reply_markup=InlineKeyboardMarkup(btns))
+    if isinstance(message, Message):
+        await message.reply_text(txt, reply_markup=InlineKeyboardMarkup(btns))
+    else:
+        await message.edit_text(txt, reply_markup=InlineKeyboardMarkup(btns))
 
 @bot.on_callback_query(filters.regex("^forcedit_"))
 async def force_edit_cb(client, cb):
-    try: _, pid, uid = cb.data.split("_"); uid = int(uid)
-    except: return
+    try:
+        _, pid, uid = cb.data.split("_")
+        uid = int(uid)
+    except:
+        return
+        
     post = await posts_col.find_one({"_id": pid})
-    if post: await start_edit_session(uid, post, cb.message)
+    if post:
+        await start_edit_session(uid, post, cb.message)
 
 @bot.on_message(filters.command("post") & filters.private)
 async def post_cmd(client, message):
     uid = message.from_user.id
-    if not await is_authorized(uid): return await message.reply_text("🚫 Not Authorized.")
-    if len(message.command) < 2: return await message.reply_text("⚠️ Usage:\n`/post Avatar`")
-    
+    if not await is_authorized(uid):
+        return
+        
+    if len(message.command) < 2:
+        return await message.reply_text("⚠️ Usage:\n`/post Avatar`")
+        
     query = message.text.split(" ", 1)[1].strip()
     msg = await message.reply_text(f"🔎 Processing `{query}`...")
     m_type, m_id = extract_tmdb_id(query)
 
     if m_type and m_id:
         if m_type == "imdb":
-            find_url = f"https://api.themoviedb.org/3/find/{m_id}?api_key={TMDB_API_KEY}&external_source=imdb_id"
-            data = await fetch_url(find_url)
-            results = data.get("movie_results", []) + data.get("tv_results",[])
-            if results: m_type, m_id = results[0]['media_type'], results[0]['id']
-            else: return await msg.edit_text("❌ IMDb ID not found in TMDB.")
-
+            data = await fetch_url(f"https://api.themoviedb.org/3/find/{m_id}?api_key={TMDB_API_KEY}&external_source=imdb_id")
+            res = data.get("movie_results", []) + data.get("tv_results",[])
+            if res:
+                m_type, m_id = res[0]['media_type'], res[0]['id']
+            else:
+                return await msg.edit_text("❌ IMDb ID not found.")
+                
         details = await get_tmdb_details(m_type, m_id)
-        if not details: return await msg.edit_text("❌ Details not found.")
-        user_conversations[message.from_user.id] = { "details": details, "links":[], "state": "wait_lang" }
-        await msg.edit_text(f"✅ Found: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language** (e.g. Hindi):")
-        return
+        if not details:
+            return await msg.edit_text("❌ Details not found.")
+            
+        user_conversations[uid] = { "details": details, "links":[], "state": "wait_lang" }
+        return await msg.edit_text(f"✅ Found: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language** (e.g. Hindi):")
 
     results = await search_tmdb(query)
-    if not results: return await msg.edit_text("❌ No results found.")
-    buttons =[]
-    for r in results:
-        btn_text = f"{r.get('title') or r.get('name')} ({str(r.get('release_date') or '----')[:4]})"
-        buttons.append([InlineKeyboardButton(btn_text, callback_data=f"sel_{r['media_type']}_{r['id']}")])
+    if not results:
+        return await msg.edit_text("❌ No results found.")
+        
+    buttons = [[InlineKeyboardButton(f"{r.get('title') or r.get('name')} ({str(r.get('release_date','----'))[:4]})", callback_data=f"sel_{r['media_type']}_{r['id']}")] for r in results]
     await msg.edit_text("👇 **Select Content:**", reply_markup=InlineKeyboardMarkup(buttons))
 
 @bot.on_callback_query(filters.regex("^sel_"))
@@ -1066,12 +1153,14 @@ async def on_select(client, cb):
     try:
         _, m_type, m_id = cb.data.split("_")
         details = await get_tmdb_details(m_type, m_id)
-        if not details: return await cb.message.edit_text("❌ Details not found.")
+        if not details:
+            return await cb.message.edit_text("❌ Details not found.")
+            
         user_conversations[cb.from_user.id] = { "details": details, "links":[], "state": "wait_lang" }
-        await cb.message.edit_text(f"✅ Selected: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language** (e.g. Hindi):")
-    except Exception as e: logger.error(f"Select Error: {e}")
+        await cb.message.edit_text(f"✅ Selected: **{details.get('title') or details.get('name')}**\n\n🗣️ Enter **Language**:")
+    except Exception as e:
+        logger.error(f"Select error: {e}")
 
-# 🔥 Progress Bar Helper Function
 async def down_progress(current, total, status_msg, start_time, last_update_time):
     now = time.time()
     if now - last_update_time[0] >= 3.0 or current == total:
@@ -1081,29 +1170,23 @@ async def down_progress(current, total, status_msg, start_time, last_update_time
         eta = (total - current) / speed if speed > 0 else 0
         
         def hbytes(size):
-            for unit in ['B', 'KB', 'MB', 'GB']:
+            for unit in['B', 'KB', 'MB', 'GB']:
                 if size < 1024.0: return f"{size:.2f} {unit}"
                 size /= 1024.0
             return f"{size:.2f} TB"
-        
+            
         filled = int(percent / 10)
         bar = "█" * filled + "░" * (10 - filled)
-        
-        text = f"⏳ **২/৩: বট সার্ভারে ডাউনলোড হচ্ছে...**\n\n"
-        text += f"📊 {bar} {percent:.1f}%\n"
-        text += f"💾 {hbytes(current)} / {hbytes(total)}\n"
-        text += f"🚀 স্পিড: {hbytes(speed)}/s | ⏱️ সময় বাকি: {int(eta)}s"
-        
         try:
-            await status_msg.edit_text(text)
-        except Exception:
+            await status_msg.edit_text(f"⏳ **২/৩: বট সার্ভারে ডাউনলোড হচ্ছে...**\n\n📊 {bar} {percent:.1f}%\n💾 {hbytes(current)} / {hbytes(total)}\n🚀 স্পিড: {hbytes(speed)}/s | ⏱️ সময় বাকি: {int(eta)}s")
+        except:
             pass
 
-# ---- CONVERSATION HANDLER ----
-@bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel"]))
+@bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel", "setapi"]))
 async def text_handler(client, message):
     uid = message.from_user.id
-    if uid not in user_conversations: return
+    if uid not in user_conversations:
+        return
     
     convo = user_conversations[uid]
     state = convo.get("state")
@@ -1120,202 +1203,184 @@ async def text_handler(client, message):
         await message.reply_text("🖼️ এবার একটি **পোস্টার (Photo)** সেন্ড করুন:")
         
     elif state == "manual_poster":
-        if not message.photo: return await message.reply_text("⚠️ দয়া করে একটি ছবি (Photo) পাঠান।")
+        if not message.photo:
+            return await message.reply_text("⚠️ দয়া করে ছবি পাঠান।")
+            
         msg = await message.reply_text("⏳ Processing Poster...")
         try:
             photo_path = await message.download()
             img_url = upload_to_catbox(photo_path) 
             os.remove(photo_path)
+            
             if img_url:
                 convo["details"]["manual_poster_url"] = img_url
                 convo["state"] = "ask_screenshots"
-                buttons = [[InlineKeyboardButton("📸 Add Screenshots", callback_data=f"ss_yes_{uid}")],[InlineKeyboardButton("⏭️ Skip", callback_data=f"ss_no_{uid}")]]
-                await msg.edit_text(f"✅ Poster Uploaded!\n\n📸 **Add Custom Screenshots?**", reply_markup=InlineKeyboardMarkup(buttons))
-            else: await msg.edit_text("❌ Poster Upload Failed.")
-        except: await msg.edit_text("❌ Error uploading poster.")
+                await msg.edit_text("✅ Poster Uploaded!\n\n📸 **Add Custom Screenshots?**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📸 Add", callback_data=f"ss_yes_{uid}"), InlineKeyboardButton("⏭️ Skip", callback_data=f"ss_no_{uid}")]]))
+            else:
+                await msg.edit_text("❌ Upload Failed.")
+        except:
+            await msg.edit_text("❌ Error uploading.")
 
     elif state == "wait_screenshots":
-        if not message.photo: return await message.reply_text("⚠️ Please send a PHOTO for screenshot.")
-        msg = await message.reply_text("⏳ Uploading Screenshot...")
+        if not message.photo:
+            return await message.reply_text("⚠️ Please send PHOTO.")
+            
+        msg = await message.reply_text("⏳ Uploading SS...")
         try:
             photo_path = await message.download()
             ss_url = upload_to_catbox(photo_path)
             os.remove(photo_path)
+            
             if ss_url:
-                if "manual_screenshots" not in convo["details"]: convo["details"]["manual_screenshots"] = []
+                if "manual_screenshots" not in convo["details"]:
+                    convo["details"]["manual_screenshots"] = []
                 convo["details"]["manual_screenshots"].append(ss_url)
-                count = len(convo["details"]["manual_screenshots"])
-                buttons = [[InlineKeyboardButton("✅ DONE", callback_data=f"ss_done_{uid}")]]
-                await msg.edit_text(f"✅ **Screenshot {count} Added!**\n\nSend another photo OR click DONE.", reply_markup=InlineKeyboardMarkup(buttons))
-            else: await msg.edit_text("❌ Failed to upload.")
-        except: await msg.edit_text("❌ Error processing.")
+                await msg.edit_text(f"✅ Screenshot Added!\nSend another or click DONE.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ DONE", callback_data=f"ss_done_{uid}")]]))
+        except:
+            pass
 
     elif state == "wait_lang":
         convo["details"]["custom_language"] = text
         convo["state"] = "wait_quality"
-        await message.reply_text("💿 Enter **Quality** (e.g. 720p):")
+        await message.reply_text("💿 Enter **Quality**:")
         
     elif state == "wait_quality":
         convo["details"]["custom_quality"] = text
         convo["state"] = "ask_links"
-        buttons = [[InlineKeyboardButton("➕ Add Links", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
-        await message.reply_text("🔗 Add Download Links?", reply_markup=InlineKeyboardMarkup(buttons))
+        await message.reply_text("🔗 Add Download Links?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Links", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
         
     elif state == "wait_link_name_custom":
         convo["temp_name"] = text
         convo["state"] = "wait_link_url"
-        await message.reply_text(f"✅ বাটনের নাম সেট হয়েছে: **{text}**\n\n🔗 এবার **URL** দিন অথবা সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন:")
+        await message.reply_text(f"✅ নাম সেট: **{text}**\n\n🔗 এবার **URL** দিন অথবা **ভিডিও ফাইলটি** ফরোয়ার্ড করুন:")
         
     elif state == "wait_link_url":
         if message.video or message.document:
-            if DB_CHANNEL_ID == 0:
-                return await message.reply_text("❌ Error: DB_CHANNEL_ID not configured in .env")
-            
-            status_msg = await message.reply_text("⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n_(Telegram Link তৈরি হচ্ছে)_")
-            
+            status_msg = await message.reply_text("⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**")
             try:
-                # 1. Save to Telegram (Your Bot Link)
                 copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
                 bot_username = (await client.get_me()).username
                 tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
                 
-                # 2. Download File to Bot Server with LIVE PROGRESS BAR
                 start_time = time.time()
                 last_update_time =[start_time]
-                file_path = await message.download(
-                    progress=down_progress,
-                    progress_args=(status_msg, start_time, last_update_time)
-                )
+                file_path = await message.download(progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
 
-                # 3. Upload to External Servers (CONCURRENT + OSHI + WORKUPLOAD)
-                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল ৩টি সার্ভারে আপলোড হচ্ছে...**\n_(GoFile, PixelDrain, Oshi - একসাথে আপলোড হচ্ছে, দয়া করে অপেক্ষা করুন)_")
+                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও আপলোড হচ্ছে)_")
                 
-                # 🔥 ম্যাজিক: একসাথে ৩টি সার্ভারে প্যারালাল আপলোড
-                gofile_url, pixeldrain_url, oshi_url = await asyncio.gather(
+                # 🔥 ম্যাজিক: একসাথে ৬টি সার্ভারে প্যারালাল আপলোড (API না থাকলে স্কিপ হবে)
+                gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url = await asyncio.gather(
                     upload_to_gofile(file_path),
+                    upload_to_fileditch(file_path),
+                    upload_to_tmpfiles(file_path),
                     upload_to_pixeldrain(file_path),
-                    upload_to_oshi(file_path)
+                    upload_to_doodstream(file_path),
+                    upload_to_streamtape(file_path)
                 )
 
-                # 🔥 STORAGE SAFE LOGIC: ফাইল আপলোডের পর বটের সার্ভার থেকে ডিলিট
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                
+                    
                 await status_msg.delete()
 
-                # 🔥 টেলিগ্রাম এবং অন্যান্য সার্ভারের লিংক একসাথে গ্রুপে সেভ
                 convo["links"].append({
                     "label": convo["temp_name"],
                     "tg_url": tg_link,
                     "gofile_url": gofile_url,
+                    "fileditch_url": fileditch_url,
+                    "tmpfiles_url": tmpfiles_url,
                     "pixel_url": pixeldrain_url,
-                    "oshi_url": oshi_url,
+                    "dood_url": dood_url,
+                    "stape_url": stape_url,
                     "is_grouped": True
                 })
 
                 if convo.get("post_id"):
                      convo["state"] = "edit_mode"
-                     btns = [[InlineKeyboardButton("➕ Add Another Link", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate Code", callback_data=f"gen_edit_{uid}")]]
-                     await message.reply_text(f"✅ **Saved 100% Genuinely!**\nস্ট্রিমিং ও ডাউনলোড সার্ভার লিংক তৈরি হয়েছে।", reply_markup=InlineKeyboardMarkup(btns))
+                     await message.reply_text("✅ **Saved 100% Genuinely!**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
                 else:
                     convo["state"] = "ask_links"
-                    buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
-                    await message.reply_text(f"✅ **Saved 100% Genuinely!**\nস্ট্রিমিং ও ডাউনলোড সার্ভার লিংক তৈরি হয়েছে।\nTotal Uploads: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
-
+                    await message.reply_text(f"✅ **Saved! Total: {len(convo['links'])}**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
             except Exception as e:
-                logger.error(f"File Auto-Mirror Error: {e}")
-                await status_msg.edit_text(f"❌ Failed to process file. Error: {e}")
-                if 'file_path' in locals() and os.path.exists(file_path):
-                    os.remove(file_path)
-                return
+                logger.error(f"Upload Error: {e}")
+                await status_msg.edit_text(f"❌ Failed: {e}")
 
         elif text.startswith("http"):
             convo["links"].append({"label": convo["temp_name"], "url": text, "is_grouped": False})
             if convo.get("post_id"):
                  convo["state"] = "edit_mode"
-                 btns = [[InlineKeyboardButton("➕ Add Another", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate Code", callback_data=f"gen_edit_{uid}")]]
-                 await message.reply_text(f"✅ **Saved!**\nLink: `{text}`", reply_markup=InlineKeyboardMarkup(btns))
+                 await message.reply_text(f"✅ Saved! Link: `{text}`", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
             else:
                 convo["state"] = "ask_links"
-                buttons = [[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}")],[InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]
-                await message.reply_text(f"✅ **Saved!**\nLink: `{text}`\nTotal Links: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup(buttons))
+                await message.reply_text(f"✅ Saved! Total: {len(convo['links'])}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
         else:
-            await message.reply_text("⚠️ Invalid Input. Please send a **URL** or **Forward a File**.")
+            await message.reply_text("⚠️ Invalid Input. URL or File required.")
     
     elif state == "wait_badge_text":
         convo["details"]["badge_text"] = text
-        buttons = [[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}")],[InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]]
-        await message.reply_text("🛡️ **Safety Check:**", reply_markup=InlineKeyboardMarkup(buttons))
+        await message.reply_text("🛡️ **Safety Check:**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}"), InlineKeyboardButton("🔞 18+", callback_data=f"safe_no_{uid}")]]))
 
-# 🔥 HANDLERS FOR CALLBACKS
 @bot.on_callback_query(filters.regex("^ss_"))
 async def ss_cb(client, cb):
-    try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
-    except: return
-    if uid != cb.from_user.id: return await cb.answer("Not for you!", show_alert=True)
+    try:
+        action, uid = cb.data.rsplit("_", 1)
+        uid = int(uid)
+    except:
+        return
+        
     if action == "ss_yes":
         user_conversations[uid]["state"] = "wait_screenshots"
         user_conversations[uid]["details"]["manual_screenshots"] =[]
-        await cb.message.edit_text("📸 **Send Screenshots now.**\n(Send photos one by one)")
-    elif action == "ss_no" or action == "ss_done":
+        await cb.message.edit_text("📸 **Send Screenshots now.**")
+    else:
         user_conversations[uid]["state"] = "wait_lang"
-        ss_count = len(user_conversations[uid]["details"].get("manual_screenshots",[]))
-        msg_text = f"✅ Saved {ss_count} screenshots." if action == "ss_done" else "⏭️ Screenshots Skipped."
-        await cb.message.edit_text(f"{msg_text}\n\n🗣️ Enter **Language** (e.g. Hindi):")
+        await cb.message.edit_text("🗣️ Enter **Language** (e.g. Hindi):")
 
 @bot.on_callback_query(filters.regex("^lnk_"))
 async def link_cb(client, cb):
-    try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
-    except: return
-    if uid != cb.from_user.id: return await cb.answer("Not for you!", show_alert=True)
+    try:
+        action, uid = cb.data.rsplit("_", 1)
+        uid = int(uid)
+    except:
+        return
+        
     if action == "lnk_yes":
         user_conversations[uid]["state"] = "wait_link_name"
-        btns = [[InlineKeyboardButton("📁 Telegram Files", callback_data=f"setlname_telegram_{uid}")],[InlineKeyboardButton("☁️ Terabox Link", callback_data=f"setlname_terabox_{uid}")],[InlineKeyboardButton("⬇️ Download", callback_data=f"setlname_download_{uid}")],[InlineKeyboardButton("✍️ Custom Name", callback_data=f"setlname_custom_{uid}")]
+        btns =[[InlineKeyboardButton("📁 Telegram", callback_data=f"setlname_telegram_{uid}"), InlineKeyboardButton("✍️ Custom", callback_data=f"setlname_custom_{uid}")]
         ]
-        await cb.message.edit_text("👇 বাটনের নাম সিলেক্ট করুন অথবা Custom বাটনে ক্লিক করে লিখে দিন:", reply_markup=InlineKeyboardMarkup(btns))
+        await cb.message.edit_text("👇 বাটনের নাম সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup(btns))
     else:
         user_conversations[uid]["state"] = "wait_badge_text"
-        btns = [[InlineKeyboardButton("🚫 Skip Badge (No Text)", callback_data=f"skip_badge_{uid}")]]
-        await cb.message.edit_text("🖼️ **পোস্টারে কোনো লেখা (Badge) বসাতে চান?**\n\nউদাহরণ: `বাংলা ডাবিং`, `Hindi Dubbed`\n_(ফেস ডিটেক্ট করে লেখাটি অটোমেটিক ফাঁকা জায়গায় বসানো হবে)_\n\n👇 নিচে লিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup(btns))
+        await cb.message.edit_text("🖼️ **Badge Text?**\n\nলিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Skip", callback_data=f"skip_badge_{uid}")]]))
 
 @bot.on_callback_query(filters.regex("^add_lnk_edit_"))
 async def add_lnk_edit(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
         user_conversations[uid]["state"] = "wait_link_name"
-        btns = [[InlineKeyboardButton("📁 Telegram Files", callback_data=f"setlname_telegram_{uid}")],[InlineKeyboardButton("☁️ Terabox Link", callback_data=f"setlname_terabox_{uid}")],[InlineKeyboardButton("⬇️ Download", callback_data=f"setlname_download_{uid}")],[InlineKeyboardButton("✍️ Custom Name", callback_data=f"setlname_custom_{uid}")]
-        ]
-        await cb.message.edit_text("👇 বাটনের নাম সিলেক্ট করুন অথবা Custom বাটনে ক্লিক করে লিখে দিন:", reply_markup=InlineKeyboardMarkup(btns))
+        await cb.message.edit_text("👇 বাটন সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📁 Telegram", callback_data=f"setlname_telegram_{uid}"), InlineKeyboardButton("✍️ Custom", callback_data=f"setlname_custom_{uid}")]]))
 
 @bot.on_callback_query(filters.regex("^setlname_"))
 async def set_lname_cb(client, cb):
-    try: 
+    try:
         _, action, uid = cb.data.split("_")
         uid = int(uid)
-    except: return
-    if uid not in user_conversations: return
-    
+    except:
+        return
+        
     if action == "custom":
         user_conversations[uid]["state"] = "wait_link_name_custom"
-        await cb.message.edit_text("📝 কাস্টম বাটনের নাম লিখুন (Ex: '1080p Download'):")
+        await cb.message.edit_text("📝 কাস্টম বাটনের নাম লিখুন:")
     else:
-        name_map = {
-            "telegram": "Telegram Files",
-            "terabox": "Terabox Link",
-            "download": "Download"
-        }
-        selected_name = name_map.get(action, "Download")
-        
-        user_conversations[uid]["temp_name"] = selected_name
+        user_conversations[uid]["temp_name"] = "Telegram Files"
         user_conversations[uid]["state"] = "wait_link_url"
-        
-        await cb.message.edit_text(f"✅ বাটন সিলেক্ট করা হয়েছে: **{selected_name}**\n\n🔗 এবার **URL** দিন অথবা সরাসরি **ভিডিও ফাইলটি** ফরোয়ার্ড করুন:")
+        await cb.message.edit_text("✅ বাটন সেট। 🔗 এবার **URL** বা **ভিডিও ফাইল** দিন:")
 
 @bot.on_callback_query(filters.regex("^gen_edit_"))
 async def gen_edit_finish(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
-        await cb.answer("⏳ Generating New Post...", show_alert=False)
+        await cb.answer("⏳ Generating...", show_alert=False)
         await generate_final_post(client, uid, cb.message)
 
 @bot.on_callback_query(filters.regex("^skip_badge_"))
@@ -1323,51 +1388,37 @@ async def skip_badge_cb(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
         user_conversations[uid]["details"]["badge_text"] = None
-        buttons = [[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}")],[InlineKeyboardButton("🔞 18+ (Force Blur)", callback_data=f"safe_no_{uid}")]]
-        await cb.message.edit_text("🛡️ **Safety Check:**\nIs this content 18+/Adult?", reply_markup=InlineKeyboardMarkup(buttons))
+        await cb.message.edit_text("🛡️ **Safety Check:**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}"), InlineKeyboardButton("🔞 18+", callback_data=f"safe_no_{uid}")]]))
 
 @bot.on_callback_query(filters.regex("^safe_"))
 async def safety_cb(client, cb):
-    try: action, uid = cb.data.rsplit("_", 1); uid = int(uid)
-    except: return
-    if uid not in user_conversations: return
+    try:
+        action, uid = cb.data.rsplit("_", 1)
+        uid = int(uid)
+    except:
+        return
+        
     user_conversations[uid]["details"]["force_adult"] = True if action == "safe_no" else False
-    await cb.message.edit_text("⏳ Generating Final Post...")
     await generate_final_post(client, uid, cb.message)
 
 async def generate_final_post(client, uid, message):
-    if uid not in user_conversations: 
-        try: return await message.edit_text("❌ Session expired. Try again.")
-        except: return
-
-    convo = user_conversations[uid]
-    
-    try:
-        status_msg = await message.edit_text("⏳ **Generating Post...**\nChecking ad configuration...")
-    except:
-        status_msg = message
+    convo = user_conversations.get(uid)
+    if not convo:
+        return await message.edit_text("❌ Session expired.")
+        
+    status_msg = await message.edit_text("⏳ **Generating Final Post...**")
 
     try:
         pid = await save_post_to_db(convo["details"], convo["links"])
-        
         loop = asyncio.get_running_loop()
-        
-        img_io = None
-        poster_bytes = None
-        try:
-            img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
-        except Exception as e:
-            logger.error(f"Image Gen Failed: {e}")
+        img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
 
         if convo["details"].get("badge_text") and poster_bytes:
-            new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
-            if new_poster_url: convo["details"]["manual_poster_url"] = new_poster_url 
+            new_poster = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
+            if new_poster:
+                convo["details"]["manual_poster_url"] = new_poster 
         
-        my_ad_links = await get_user_ads(uid)
-        owner_ad_links = await get_owner_ads()
-        admin_share = await get_admin_share()
-        
-        html = generate_html_code(convo["details"], convo["links"], my_ad_links, owner_ad_links, admin_share)
+        html = generate_html_code(convo["details"], convo["links"], await get_user_ads(uid), await get_owner_ads(), await get_admin_share())
         caption = generate_formatted_caption(convo["details"], pid)
         convo["final"] = {"html": html}
         
@@ -1375,42 +1426,35 @@ async def generate_final_post(client, uid, message):
         
         if img_io:
             await client.send_photo(message.chat.id, img_io, caption=caption, reply_markup=InlineKeyboardMarkup(btns))
-            try: await status_msg.delete()
-            except: pass
+            await status_msg.delete()
         else:
             await client.send_message(message.chat.id, caption, reply_markup=InlineKeyboardMarkup(btns))
-            try: await status_msg.delete()
-            except: pass
-        
-        if LOG_CHANNEL_ID and LOG_CHANNEL_ID != 0 and img_io:
-            img_io.seek(0)
-            user_info = await client.get_users(uid)
-            log_caption = caption + f"\n\n👤 **Generated By:** {user_info.mention} (`{uid}`)\n💰 **Admin Share:** {admin_share}%\n🕒 **Time:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            try: await client.send_photo(LOG_CHANNEL_ID, img_io, caption=log_caption)
-            except: pass
+            await status_msg.delete()
             
     except Exception as e:
-        logger.error(f"Post Generation Critical Error: {e}")
-        try:
-            await status_msg.edit_text(f"❌ **Error:** Something went wrong.\n`{str(e)}`")
-        except:
-            await client.send_message(message.chat.id, f"❌ **Error:** Something went wrong during post generation.\n`{str(e)}`")
+        await status_msg.edit_text(f"❌ **Error:** `{e}`")
 
 @bot.on_callback_query(filters.regex("^get_code_"))
 async def get_code(client, cb):
-    try: _, _, uid = cb.data.rsplit("_", 2); uid = int(uid)
-    except: return
-    data = user_conversations.get(uid, {})
-    if "final" not in data: return await cb.answer("Expired.", show_alert=True)
+    try:
+        _, _, uid = cb.data.rsplit("_", 2)
+        uid = int(uid)
+    except:
+        return
+        
+    data = user_conversations.get(uid)
+    if not data or "final" not in data:
+        return await cb.answer("Expired.", show_alert=True)
     
-    await cb.answer("⏳ Uploading to Dpaste...", show_alert=False)
+    await cb.answer("⏳ Generating Code...", show_alert=False)
     link = await create_paste_link(data["final"]["html"])
     
-    if link: await cb.message.reply_text(f"✅ **Code Ready!**\n\n👇 Copy:\n{link}", disable_web_page_preview=True)
+    if link:
+        await cb.message.reply_text(f"✅ **Code Ready!**\n\n👇 Copy:\n{link}", disable_web_page_preview=True)
     else:
         file = io.BytesIO(data["final"]["html"].encode())
-        file.name = "blogger_post.html"
-        await client.send_document(cb.message.chat.id, file, caption="⚠️ Link failed. File attached.")
+        file.name = "post.html"
+        await client.send_document(cb.message.chat.id, file, caption="⚠️ Link failed. Download File.")
 
 # ---- ENTRY POINT ----
 if __name__ == "__main__":
@@ -1422,5 +1466,5 @@ if __name__ == "__main__":
     ping_thread.daemon = True
     ping_thread.start()
     
-    print("🚀 Ultimate Bot Started (v42 - 4 Servers + Watch Online UI + Safe Storage)!")
+    print("🚀 Ultimate SPA Bot Running!")
     bot.run()
