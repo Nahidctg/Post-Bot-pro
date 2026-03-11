@@ -515,13 +515,14 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
             tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
             btn_html += f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span class="btn-text">✈️ Telegram File</span> <span class="badge badge-blue">100% Safe</span></button>'
             
+            # 🔥 আপডেট করা বাটনের নাম (Fast Server 1 এবং Backup Server)
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span class="btn-text">☁️ PixelDrain</span> <span class="badge">Fast</span></button>'
+                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span class="btn-text">☁️ Fast Server 1</span> <span class="badge">Turbo</span></button>'
 
             if link.get('oshi_url'):
                 os_b64 = base64.b64encode(link['oshi_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-oshi" onclick="secureLink(this, \'{os_b64}\')"><span class="btn-text">🚀 Oshi.at Drive</span> <span class="badge badge-blue">Backup</span></button>'
+                btn_html += f'<button class="srv-btn srv-oshi" onclick="secureLink(this, \'{os_b64}\')"><span class="btn-text">🚀 Backup Server</span> <span class="badge badge-blue">Stable</span></button>'
                 
             links_html += f"""
             <div class="pro-dl-box">
@@ -687,7 +688,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     {meta_html}
     {script_html}
     """
-# ---- IMAGE & CAPTION GENERATOR ----
+    # ---- IMAGE & CAPTION GENERATOR ----
 def generate_formatted_caption(data, pid=None):
     title = data.get("title") or data.get("name") or "N/A"
     is_adult = data.get('adult', False) or data.get('force_adult', False)
