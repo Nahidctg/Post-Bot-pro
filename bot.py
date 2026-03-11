@@ -499,45 +499,35 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     if ss_html:
         ss_section = f"""<div class="ss-container"><h3 style="color: #ff00de; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #ff00de; display: inline-block;">📸 SCREENSHOTS</h3>{ss_html}</div>"""
 
-    # 🔥 STREAMING & MULTI DOWNLOAD UI GENERATION
+    # 🔥 STREAMING & MULTI DOWNLOAD UI GENERATION (NEW GRID DESIGN)
     links_html = ""
     for idx, link in enumerate(links):
         label = link['label']
         
         if link.get("is_grouped"):
-            # GoFile Link for Streaming
+            btn_html = ""
+            # GoFile Link for Streaming (Full Width)
             if link.get('gofile_url'):
                 go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
-                links_html += f"""
-                <div class="pro-dl-box" style="border-left: 4px solid #00e676;">
-                    <div class="pro-dl-header">
-                        <span class="pro-title">▶️ WATCH ONLINE (স্ট্রিমিং)</span>
-                        <span class="pro-status">● Live Stream</span>
-                    </div>
-                    <div class="pro-btn-grid">
-                        <button class="srv-btn srv-stream" onclick="secureLink(this, '{go_b64}')">
-                            <span>▶️ Play in Web Player</span> <span class="badge">No Buffering</span>
-                        </button>
-                    </div>
-                </div>"""
+                btn_html += f'<button class="srv-btn srv-stream full-width" onclick="secureLink(this, \'{go_b64}\')"><span class="btn-text">▶️ Watch Online (স্ট্রিমিং)</span> <span class="badge">No Buffering</span></button>'
 
-            # Download Buttons
+            # Download Buttons (Grid Columns)
             tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
-            btn_html = f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span>✈️ Telegram File</span> <span class="badge badge-blue">Safe</span></button>'
+            btn_html += f'<button class="srv-btn srv-tg" onclick="secureLink(this, \'{tg_b64}\')"><span class="btn-text">✈️ Telegram File</span> <span class="badge badge-blue">100% Safe</span></button>'
             
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span>☁️ PixelDrain</span> <span class="badge">Fast</span></button>'
+                btn_html += f'<button class="srv-btn srv-mirror" onclick="secureLink(this, \'{px_b64}\')"><span class="btn-text">☁️ PixelDrain</span> <span class="badge">Fast</span></button>'
 
             if link.get('oshi_url'):
                 os_b64 = base64.b64encode(link['oshi_url'].encode('utf-8')).decode('utf-8')
-                btn_html += f'<button class="srv-btn srv-oshi" onclick="secureLink(this, \'{os_b64}\')"><span>🚀 Oshi.at Drive</span> <span class="badge badge-blue">Backup</span></button>'
+                btn_html += f'<button class="srv-btn srv-oshi" onclick="secureLink(this, \'{os_b64}\')"><span class="btn-text">🚀 Oshi.at Drive</span> <span class="badge badge-blue">Backup</span></button>'
                 
             links_html += f"""
             <div class="pro-dl-box">
                 <div class="pro-dl-header">
                     <span class="pro-title">📥 {label}</span>
-                    <span class="pro-status">● Available</span>
+                    <span class="pro-status">● Live Active</span>
                 </div>
                 <div class="pro-btn-grid">
                     {btn_html}
@@ -552,10 +542,10 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
             <div class="pro-dl-box">
                 <div class="pro-dl-header">
                     <span class="pro-title">🔗 {label}</span>
-                    <span class="pro-status">● Available</span>
+                    <span class="pro-status">● Direct Link</span>
                 </div>
                 <div class="pro-btn-grid">
-                    <button class="srv-btn srv-tg" onclick="secureLink(this, '{encoded_url}')"><span>📥 Download Link</span> <span class="badge badge-blue">Direct</span></button>
+                    <button class="srv-btn srv-tg full-width" onclick="secureLink(this, '{encoded_url}')"><span class="btn-text">📥 Download Link</span> <span class="badge badge-blue">Direct</span></button>
                 </div>
             </div>"""
 
@@ -563,7 +553,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     weighted_ad_list =[]
     
     if not user_ad_links_list:
-        weighted_ad_list = owner_ad_links_list if owner_ad_links_list else ["https://google.com"]
+        weighted_ad_list = owner_ad_links_list if owner_ad_links_list else["https://google.com"]
     elif not owner_ad_links_list:
         weighted_ad_list = user_ad_links_list
     else:
@@ -596,28 +586,42 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         .ss-container { margin: 25px 0; }
         .neon-ss { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 2px solid #ff00de; box-shadow: 0 0 15px rgba(255, 0, 222, 0.3); }
         
-        /* Modern UI Box CSS */
+        /* 🔥 MODERN GRID UI BOX CSS 🔥 */
         .pro-dl-box { background: #1a1a24; border: 1px solid #2d2d3f; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: left; }
         .pro-dl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #2d2d3f; }
         .pro-title { font-size: 16px; font-weight: 700; color: #ffeb3b; }
-        .pro-status { font-size: 11px; color: #00e676; font-weight: 600; background: rgba(0, 230, 118, 0.1); padding: 3px 8px; border-radius: 12px; }
-        .pro-btn-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-        .srv-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; font-size: 14px; font-weight: 600; color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .pro-status { font-size: 11px; color: #00e676; font-weight: 600; background: rgba(0, 230, 118, 0.1); padding: 4px 10px; border-radius: 12px; letter-spacing: 0.5px; }
         
-        /* Buttons Color Gradients */
-        .srv-stream { background: linear-gradient(90deg, #00c6ff, #0072ff); }
-        .srv-fast { background: linear-gradient(90deg, #d32f2f, #f44336); }
-        .srv-mirror { background: linear-gradient(90deg, #f57c00, #ff9800); }
-        .srv-oshi { background: linear-gradient(90deg, #673ab7, #9c27b0); }
-        .srv-tg { background: linear-gradient(90deg, #1976d2, #2196f3); }
+        /* Grid Layout */
+        .pro-btn-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .full-width { grid-column: 1 / -1; flex-direction: row !important; justify-content: space-between !important; padding: 12px 18px !important; }
         
-        .srv-btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
-        .srv-btn:disabled { background: #444 !important; color: #aaa !important; cursor: not-allowed; transform: none; }
-        .badge { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+        /* Buttons Style */
+        .srv-btn { width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 12px; font-size: 13px; font-weight: 600; color: white; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3); gap: 6px; }
+        .btn-text { display: flex; align-items: center; justify-content: center; width: 100%; }
+        
+        /* Premium Gradients */
+        .srv-stream { background: linear-gradient(135deg, #ff416c, #ff4b2b); border: 1px solid #ff4b2b; }
+        .srv-tg { background: linear-gradient(135deg, #1e88e5, #1565c0); border: 1px solid #1e88e5; }
+        .srv-mirror { background: linear-gradient(135deg, #f57c00, #e65100); border: 1px solid #f57c00; }
+        .srv-oshi { background: linear-gradient(135deg, #7e57c2, #512da8); border: 1px solid #7e57c2; }
+        
+        .srv-btn:hover { filter: brightness(1.2); transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0,0,0,0.5); }
+        .srv-btn:active { transform: translateY(0); }
+        .srv-btn:disabled { background: #333 !important; color: #888 !important; border-color: #444 !important; cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        /* Badge Enhancements */
+        .badge { background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
         .badge-blue { background: rgba(255,255,255,0.2); }
         
         .disclaimer { font-size: 10px; color: #555; margin-top: 30px; border-top: 1px solid #222; padding-top: 10px; text-align: center; }
         .instruction-box { background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 8px; font-size: 12px; color: #bbb; text-align: center; margin-bottom: 20px; border: 1px dashed #444; }
+        
+        /* Mobile adjustment */
+        @media (max-width: 400px) {
+            .pro-btn-grid { grid-template-columns: 1fr; }
+            .srv-btn { flex-direction: row; justify-content: space-between; padding: 12px 15px; }
+        }
     </style>
     """
 
@@ -639,12 +643,13 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         btn.disabled = true;
         
         let timer = setInterval(function() {{
-            btn.innerHTML = "⏳ Wait... " + timeLeft + "s";
+            btn.innerHTML = "<span class='btn-text'>⏳ Wait... " + timeLeft + "s</span>";
             timeLeft--;
             if (timeLeft < 0) {{
                 clearInterval(timer);
-                btn.innerHTML = "🚀 Loading...";
+                btn.innerHTML = "<span class='btn-text'>🚀 Loading...</span>";
                 btn.style.background = "#00C853"; 
+                btn.style.borderColor = "#00C853";
                 window.location.href = realUrl; 
             }}
         }}, 1000); 
@@ -657,7 +662,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     reveal_html = '<div class="reveal-btn">🔞 Click to Reveal</div>' if is_adult else ""
 
     return f"""
-    <!-- Auto Redirect Code (v42 Shared) -->
+    <!-- Auto Redirect Code (v42 Advanced Grid) -->
     {style_html}
     <div class="main-card">
         <div class="poster-wrapper {poster_wrapper_class}">
@@ -682,7 +687,6 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     {meta_html}
     {script_html}
     """
-
 # ---- IMAGE & CAPTION GENERATOR ----
 def generate_formatted_caption(data, pid=None):
     title = data.get("title") or data.get("name") or "N/A"
