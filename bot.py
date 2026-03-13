@@ -162,7 +162,7 @@ async def save_user_ads(user_id, links):
 async def get_all_users_count():
     return await users_col.count_documents({})
 
-# 🔥 DYNAMIC API KEY MANAGER (FOR DOODSTREAM & STREAMTAPE)
+# 🔥 DYNAMIC API KEY MANAGER
 async def get_server_api(server_name):
     data = await settings_col.find_one({"_id": "api_keys"})
     return data.get(server_name) if data else None
@@ -211,7 +211,7 @@ async def fetch_url(url, method="GET", data=None, headers=None, json_data=None):
     return None
 
 # ====================================================================
-# 🔥 AUTO MIRROR UPLOAD FUNCTIONS (6 ADVANCED MULTI-SERVERS)
+# 🔥 AUTO MIRROR UPLOAD FUNCTIONS (8 ADVANCED MULTI-SERVERS)
 # ====================================================================
 
 async def upload_to_gofile(file_path):
@@ -323,12 +323,57 @@ async def upload_to_streamtape(file_path):
         logger.error(f"Streamtape Error: {e}")
     return None
 
+async def upload_to_filemoon(file_path):
+    api_key = await get_server_api("filemoon")
+    if not api_key:
+        return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://filemoonapi.com/api/upload/server?key={api_key}") as resp:
+                data = await resp.json()
+                if data.get('msg') != 'OK':
+                    return None
+                upload_url = data['result']
+            
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                form.add_field('api_key', api_key)
+                async with session.post(upload_url, data=form) as upload_resp:
+                    result = await upload_resp.json()
+                    if result.get('msg') == 'OK':
+                        return f"https://filemoon.sx/e/{result['result'][0]['filecode']}"
+    except Exception as e:
+        logger.error(f"Filemoon Error: {e}")
+    return None
+
+async def upload_to_mixdrop(file_path):
+    api_credentials = await get_server_api("mixdrop")
+    if not api_credentials or ":" not in api_credentials:
+        return None 
+    try:
+        email, api_key = api_credentials.split(":")
+        url = "https://api.mixdrop.co/upload"
+        async with aiohttp.ClientSession() as session:
+            with open(file_path, 'rb') as f:
+                form = aiohttp.FormData()
+                form.add_field('file', f, filename=os.path.basename(file_path))
+                form.add_field('email', email)
+                form.add_field('key', api_key)
+                async with session.post(url, data=form) as resp:
+                    result = await resp.json()
+                    if result.get('success'):
+                        return result['result']['embedurl']
+    except Exception as e:
+        logger.error(f"MixDrop Error: {e}")
+    return None
+
 # ---- FLASK KEEP-ALIVE ----
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 v42 Ultimate Bot Running (Multi-Server + SPA UI + Dynamic API Manager)"
+    return "🤖 Ultimate SPA Bot Running (8 Servers + Filemoon + MixDrop)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -449,7 +494,6 @@ async def search_tmdb(query):
     except:
         return[]
 
-# 🔥 API UPDATED: Now fetches Videos, Images, Credits for richer UI
 async def get_tmdb_details(media_type, media_id):
     url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}&append_to_response=credits,similar,images,videos&include_image_language=en,null"
     return await fetch_url(url)
@@ -510,8 +554,7 @@ def apply_badge_to_poster(poster_bytes, text):
         pos_x = (width - box_w) // 2
         
         overlay = Image.new('RGBA', base_img.size, (0,0,0,0))
-        ImageDraw.Draw(overlay).rectangle([pos_x, pos_y, pos_x + box_w, pos_y + box_h], fill=(0, 0, 0, 220))
-        base_img = Image.alpha_composite(base_img, overlay)
+        ImageDraw.Draw(overlay).rectangle(base_img = Image.alpha_composite(base_img, overlay)
         draw = ImageDraw.Draw(base_img)
         cx = pos_x + padding_x
         cy = pos_y + padding_y - 12
@@ -529,7 +572,8 @@ def apply_badge_to_poster(poster_bytes, text):
         base_img.save(img_buffer, format="PNG")
         img_buffer.seek(0)
         return img_buffer
-    except:
+    except Exception as e:
+        logger.error(f"Badge Error: {e}")
         return io.BytesIO(poster_bytes)
 
 # ============================================================================
@@ -582,7 +626,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     screenshots = data.get('manual_screenshots',[])
     if not screenshots and not data.get('is_manual'):
         backdrops = data.get('images', {}).get('backdrops', [])
-        screenshots =[f"https://image.tmdb.org/t/p/w780{b['file_path']}" for b in backdrops[:6]] # taking up to 6 screenshots
+        screenshots =[f"https://image.tmdb.org/t/p/w780{b['file_path']}" for b in backdrops[:6]] 
         
     ss_html = ""
     if screenshots:
@@ -594,27 +638,51 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         </div>
         '''
 
-    # 🔥 GENERATE SERVER LIST
+    # 🔥 GENERATE SERVER LIST (8 SERVERS SUPPORT)
     server_list_html = ""
     for idx, link in enumerate(links):
         if link.get("is_grouped"):
+            
+            # Filemoon (Premium Stream)
+            if link.get('filemoon_url'):
+                fm_b64 = base64.b64encode(link['filemoon_url'].encode('utf-8')).decode('utf-8')
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{fm_b64}\')" style="background: #673AB7;">🎬 Watch on Filemoon (Premium)</button>'
+            
+            # MixDrop
+            if link.get('mixdrop_url'):
+                md_b64 = base64.b64encode(link['mixdrop_url'].encode('utf-8')).decode('utf-8')
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{md_b64}\')" style="background: #FFC107; color: #000;">⚡ MixDrop HD Stream</button>'
+
+            # DoodStream
             if link.get('dood_url'):
                 dood_b64 = base64.b64encode(link['dood_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{dood_b64}\')" style="background: #F57C00;">🎬 Watch on DoodStream</button>'
+            
+            # Streamtape
             if link.get('stape_url'):
                 stape_b64 = base64.b64encode(link['stape_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{stape_b64}\')" style="background: #E91E63;">🎥 Streamtape HD</button>'
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{stape_b64}\')" style="background: #E91E63;">🎥 Streamtape (HD Stream)</button>'
+
+            # GoFile
             if link.get('gofile_url'):
                 go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ GoFile Fast Play</button>'
+            
+            # Telegram Server
             tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
             server_list_html += f'<button class="final-server-btn tg-btn" onclick="goToLink(\'{tg_b64}\')">✈️ Telegram Fast Server</button>'
+            
+            # FileDitch
             if link.get('fileditch_url'):
                 fd_b64 = base64.b64encode(link['fileditch_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{fd_b64}\')" style="background: #009688;">☁️ FileDitch (15GB Max)</button>'
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{fd_b64}\')" style="background: #009688;">☁️ Direct Cloud (15GB Max)</button>'
+
+            # TmpFiles
             if link.get('tmpfiles_url'):
                 tmp_b64 = base64.b64encode(link['tmpfiles_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{tmp_b64}\')" style="background: #6A1B9A;">🚀 High-Speed Server 1</button>'
+
+            # PixelDrain
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{px_b64}\')" style="background: #2E7D32;">⚡ Fast Server 2</button>'
@@ -980,7 +1048,7 @@ async def start_cmd(client, message):
         "📌 **কিভাবে ব্যবহার করবেন?**\n"
         "👉 `/post <নাম>` - অটোমেটিক পোস্ট করতে\n"
         "👉 `/manual` - ম্যানুয়াল পোস্ট করতে\n"
-        "👉 `/setapi doodstream <key>` - আর্নিং সাইট সেট করতে (Only Admin)\n"
+        "👉 `/setapi <server> <key>` - আর্নিং সাইট সেট করতে (Only Admin)\n"
         "👉 `/setadlink <লিংক>` - নিজের অ্যাড লিংক সেট করতে\n"
         "👉 `/mysettings` - নিজের সেটিংস ও লিংক দেখতে\n"
         "👉 `/cancel` - কোনো কাজ বাতিল করতে\n"
@@ -1075,14 +1143,14 @@ async def set_api_command(client, message):
         if len(parts) < 3:
             return await message.reply_text(
                 "⚠️ **Format:** `/setapi <server_name> <api_key>`\n"
-                "**Supported Servers:** `doodstream`, `streamtape`\n"
-                "For Streamtape use format: `login_id:api_key`"
+                "**Supported Servers:** `doodstream`, `streamtape`, `filemoon`, `mixdrop`\n"
+                "For Streamtape & MixDrop use format: `email:api_key`"
             )
         
         server_name = parts[1].lower()
         api_key = parts[2].strip()
         
-        if server_name not in ["doodstream", "streamtape"]:
+        if server_name not in["doodstream", "streamtape", "filemoon", "mixdrop"]:
             return await message.reply_text("❌ Unsupported server.")
             
         await set_server_api(server_name, api_key)
@@ -1378,16 +1446,18 @@ async def text_handler(client, message):
                 last_update_time =[start_time]
                 file_path = await message.download(progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
 
-                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও আপলোড হচ্ছে)_")
+                await status_msg.edit_text("⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও প্যারালাল আপলোড হচ্ছে)_")
                 
-                # 🔥 ম্যাজিক: একসাথে ৬টি সার্ভারে প্যারালাল আপলোড (API না থাকলে স্কিপ হবে)
-                gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url = await asyncio.gather(
+                # 🔥 ম্যাজিক: একসাথে ৮টি সার্ভারে প্যারালাল আপলোড (API না থাকলে স্কিপ হবে)
+                gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url, filemoon_url, mixdrop_url = await asyncio.gather(
                     upload_to_gofile(file_path),
                     upload_to_fileditch(file_path),
                     upload_to_tmpfiles(file_path),
                     upload_to_pixeldrain(file_path),
                     upload_to_doodstream(file_path),
-                    upload_to_streamtape(file_path)
+                    upload_to_streamtape(file_path),
+                    upload_to_filemoon(file_path),
+                    upload_to_mixdrop(file_path)
                 )
 
                 if os.path.exists(file_path):
@@ -1404,6 +1474,8 @@ async def text_handler(client, message):
                     "pixel_url": pixeldrain_url,
                     "dood_url": dood_url,
                     "stape_url": stape_url,
+                    "filemoon_url": filemoon_url,
+                    "mixdrop_url": mixdrop_url,
                     "is_grouped": True
                 })
 
