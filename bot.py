@@ -449,8 +449,9 @@ async def search_tmdb(query):
     except:
         return[]
 
+# 🔥 API UPDATED: Now fetches Videos, Images, Credits for richer UI
 async def get_tmdb_details(media_type, media_id):
-    url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}&append_to_response=credits,similar,images&include_image_language=en,null"
+    url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={TMDB_API_KEY}&append_to_response=credits,similar,images,videos&include_image_language=en,null"
     return await fetch_url(url)
 
 async def create_paste_link(content):
@@ -532,57 +533,88 @@ def apply_badge_to_poster(poster_bytes, text):
         return io.BytesIO(poster_bytes)
 
 # ============================================================================
-# 🔥 ADVANCED HTML GENERATOR (SINGLE PAGE APP UI)
+# 🔥 ADVANCED HTML GENERATOR (NEW AWESOME UI DESIGN)
 # ============================================================================
 def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, admin_share_percent=20):
     title = data.get("title") or data.get("name")
-    overview = data.get("overview", "")
+    overview = data.get("overview", "No plot available.")
     poster = data.get('manual_poster_url') or f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}"
-    is_adult = data.get('adult', False) or data.get('force_adult', False)
     BTN_TELEGRAM = "https://i.ibb.co/kVfJvhzS/photo-2025-12-23-12-38-56-7587031987190235140.jpg"
 
+    # Extract all necessary movie data
     lang_str = data.get('custom_language', 'Dual Audio').strip()
     if data.get('is_manual'):
-        genres_str = "Movie / Unknown" 
+        genres_str = "Custom / Unknown" 
+        year = "N/A"
+        rating = "N/A"
+        runtime_str = "N/A"
+        cast_names = "N/A"
     else:
         genres_list = [g['name'] for g in data.get('genres',[])]
         genres_str = ", ".join(genres_list) if genres_list else "Movie"
+        year = str(data.get("release_date") or data.get("first_air_date") or "----")[:4]
+        rating = f"{data.get('vote_average', 0):.1f}/10"
+        
+        runtime = data.get('runtime') or (data.get('episode_run_time',[0])[0] if data.get('episode_run_time') else "N/A")
+        runtime_str = f"{runtime} min" if runtime != "N/A" else "N/A"
+        
+        cast_list = data.get('credits', {}).get('cast',[])
+        cast_names = ", ".join([c['name'] for c in cast_list[:4]]) if cast_list else "Unknown"
 
-    # 🔥 GENERATE SERVER LIST (HIDDEN INITIALLY)
+    # 🔥 Trailer Auto-Fetcher
+    trailer_key = ""
+    videos = data.get('videos', {}).get('results',[])
+    for v in videos:
+        if v.get('type') == 'Trailer' and v.get('site') == 'YouTube':
+            trailer_key = v.get('key')
+            break
+            
+    trailer_html = ""
+    if trailer_key:
+        trailer_html = f'''
+        <div class="section-title">🎬 Official Trailer</div>
+        <div class="video-container">
+            <iframe src="https://www.youtube.com/embed/{trailer_key}" allowfullscreen></iframe>
+        </div>
+        '''
+
+    # 🔥 Screenshots Auto-Fetcher (TMDB Backdrops or Manual)
+    screenshots = data.get('manual_screenshots',[])
+    if not screenshots and not data.get('is_manual'):
+        backdrops = data.get('images', {}).get('backdrops', [])
+        screenshots =[f"https://image.tmdb.org/t/p/w780{b['file_path']}" for b in backdrops[:6]] # taking up to 6 screenshots
+        
+    ss_html = ""
+    if screenshots:
+        ss_imgs = "".join([f'<img src="{img}" alt="Screenshot">' for img in screenshots])
+        ss_html = f'''
+        <div class="section-title">📸 Screenshots</div>
+        <div class="screenshot-grid">
+            {ss_imgs}
+        </div>
+        '''
+
+    # 🔥 GENERATE SERVER LIST
     server_list_html = ""
     for idx, link in enumerate(links):
         if link.get("is_grouped"):
-            
-            # 1. DoodStream
             if link.get('dood_url'):
                 dood_b64 = base64.b64encode(link['dood_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{dood_b64}\')" style="background: #F57C00;">🎬 Watch on DoodStream (Premium)</button>'
-            
-            # 2. Streamtape
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{dood_b64}\')" style="background: #F57C00;">🎬 Watch on DoodStream</button>'
             if link.get('stape_url'):
                 stape_b64 = base64.b64encode(link['stape_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{stape_b64}\')" style="background: #E91E63;">🎥 Streamtape (HD Stream)</button>'
-
-            # 3. GoFile
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{stape_b64}\')" style="background: #E91E63;">🎥 Streamtape HD</button>'
             if link.get('gofile_url'):
                 go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ Watch Online (Fast)</button>'
-            
-            # 4. Telegram Server
+                server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ GoFile Fast Play</button>'
             tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
             server_list_html += f'<button class="final-server-btn tg-btn" onclick="goToLink(\'{tg_b64}\')">✈️ Telegram Fast Server</button>'
-            
-            # 5. FileDitch
             if link.get('fileditch_url'):
                 fd_b64 = base64.b64encode(link['fileditch_url'].encode('utf-8')).decode('utf-8')
-                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{fd_b64}\')" style="background: #009688;">☁️ Direct Cloud (15GB Max)</button>'
-
-            # 6. TmpFiles
+                server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{fd_b64}\')" style="background: #009688;">☁️ FileDitch (15GB Max)</button>'
             if link.get('tmpfiles_url'):
                 tmp_b64 = base64.b64encode(link['tmpfiles_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{tmp_b64}\')" style="background: #6A1B9A;">🚀 High-Speed Server 1</button>'
-
-            # 7. PixelDrain
             if link.get('pixel_url'):
                 px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{px_b64}\')" style="background: #2E7D32;">⚡ Fast Server 2</button>'
@@ -611,14 +643,31 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
 
     style_html = """
     <style>
-        .app-wrapper { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f13; border: 1px solid #2a2a35; border-radius: 12px; max-width: 600px; margin: 20px auto; padding: 20px; color: #fff; box-sizing: border-box; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .app-wrapper { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f13; border: 1px solid #2a2a35; border-radius: 12px; max-width: 650px; margin: 20px auto; padding: 20px; color: #fff; box-sizing: border-box; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .app-wrapper * { box-sizing: border-box; }
-        .poster-box { text-align: center; margin-bottom: 20px; }
-        .poster-box img { max-width: 250px; width: 100%; border-radius: 10px; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-        .movie-title { color: #00d2ff; font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 10px; line-height: 1.4; }
-        .movie-plot { color: #bbb; font-size: 13px; text-align: justify; margin-bottom: 20px; line-height: 1.6; }
         
-        .action-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+        .movie-title { color: #00d2ff; font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 20px; line-height: 1.4; text-shadow: 1px 1px 5px rgba(0,0,0,0.8); }
+        
+        .info-box { display: flex; flex-direction: row; background: #1a1a24; border: 1px solid #333; border-radius: 12px; padding: 15px; gap: 20px; margin-bottom: 20px; align-items: center; }
+        @media (max-width: 480px) { .info-box { flex-direction: column; text-align: center; } }
+        
+        .info-poster img { width: 150px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border: 2px solid #222; }
+        
+        .info-text { flex: 1; text-align: left; font-size: 14px; color: #d1d1d1; line-height: 1.7; }
+        .info-text span { color: #00e676; font-weight: bold; }
+        
+        .section-title { font-size: 18px; color: #fff; margin: 20px 0 10px; border-bottom: 2px solid #ff0844; display: inline-block; padding-bottom: 5px; font-weight: bold; }
+        
+        .plot-box { background: rgba(255,255,255,0.03); padding: 15px; border-left: 4px solid #00d2ff; border-radius: 4px; font-size: 14px; color: #bbb; margin-bottom: 20px; line-height: 1.6; text-align: justify; }
+        
+        .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
+        .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+        
+        .screenshot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 25px; }
+        .screenshot-grid img { width: 100%; border-radius: 8px; border: 1px solid #444; transition: transform 0.3s; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+        .screenshot-grid img:hover { transform: scale(1.05); z-index: 10; cursor: pointer; }
+        
+        .action-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
         .main-btn { width: 100%; padding: 16px; font-size: 16px; font-weight: bold; text-transform: uppercase; color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; display: flex; justify-content: center; align-items: center; gap: 10px; letter-spacing: 1px; }
         .btn-watch { background: linear-gradient(90deg, #ff0844 0%, #ffb199 100%); box-shadow: 0 4px 15px rgba(255, 8, 68, 0.4); }
         .btn-download { background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%); color: #000; box-shadow: 0 4px 15px rgba(0, 201, 255, 0.4); }
@@ -658,9 +707,10 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
             
             if (timeLeft < 0) {{
                 clearInterval(timer);
-                btn.innerHTML = "✅ Unlocked!";
+                btn.innerHTML = "✅ Unlocked Successfully!";
                 document.getElementById('view-details').style.display = 'none';
                 document.getElementById('view-links').style.display = 'block';
+                window.scrollTo({{top: 0, behavior: 'smooth'}});
             }}
         }}, 1000); 
     }}
@@ -677,35 +727,64 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     {style_html}
     <div class="app-wrapper">
         <div id="view-details">
-            <div class="poster-box">
-                <img src="{poster}" alt="Poster">
-            </div>
-            <div class="movie-title">{title}</div>
-            <div class="movie-plot">{overview[:250]}...</div>
             
-            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; font-size: 12px; text-align: center; margin-bottom: 15px; color: #ccc;">
+            <div class="movie-title">{title} ({year})</div>
+            
+            <!-- Movie Information Box -->
+            <div class="info-box">
+                <div class="info-poster">
+                    <img src="{poster}" alt="{title} Poster">
+                </div>
+                <div class="info-text">
+                    <div><span>⭐ Rating:</span> {rating}</div>
+                    <div><span>🎭 Genre:</span> {genres_str}</div>
+                    <div><span>🗣️ Language:</span> {lang_str}</div>
+                    <div><span>⏱️ Runtime:</span> {runtime_str}</div>
+                    <div><span>📅 Release:</span> {year}</div>
+                    <div><span>👥 Cast:</span> {cast_names}</div>
+                </div>
+            </div>
+            
+            <!-- Storyline / Plot -->
+            <div class="section-title">📖 Storyline</div>
+            <div class="plot-box">
+                {overview}
+            </div>
+            
+            <!-- Trailer Section -->
+            {trailer_html}
+
+            <!-- Screenshots Section -->
+            {ss_html}
+            
+            <!-- Download Section -->
+            <div class="section-title">📥 Links & Downloads</div>
+            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-size: 13px; text-align: center; margin-bottom: 15px; color: #ccc;">
                 ℹ️ <b>How to Download:</b> Click any button below, wait 5 seconds, and the Server List will unlock automatically.
             </div>
             
             <div class="action-grid">
                 <button class="main-btn btn-watch" onclick="startUnlock(this, 'watch')">
-                    ▶️ WATCH NOW
+                    ▶️ STREAM ONLINE
                 </button>
                 <button class="main-btn btn-download" onclick="startUnlock(this, 'download')">
-                    📥 DOWNLOAD NOW
+                    📥 DOWNLOAD FILES
                 </button>
             </div>
+            
         </div>
         
+        <!-- Unlocked Links Area -->
         <div id="view-links">
-            <div class="success-title">✅ Links Unlocked Successfully!</div>
-            <p style="font-size: 13px; color: #bbb;">Please select a server below to stream or download your file.</p>
+            <div class="success-title">✅ Links Unlocked!</div>
+            <p style="font-size: 14px; color: #bbb;">Please select a high-speed server below to stream or download.</p>
             
             <div class="server-list">
                 {server_list_html}
             </div>
         </div>
         
+        <!-- Promotional Content -->
         <div class="promo-box">
             <a href="https://t.me/+6hvCoblt6CxhZjhl" target="_blank"><img src="{BTN_TELEGRAM}"></a>
         </div>
@@ -909,7 +988,7 @@ async def start_cmd(client, message):
     )
     await message.reply_text(welcome_text)
 
-# --- CANCEL COMMAND (NEW FIX) ---
+# --- CANCEL COMMAND ---
 @bot.on_message(filters.command("cancel") & filters.private)
 async def cancel_cmd(client, message):
     uid = message.from_user.id
@@ -942,7 +1021,6 @@ async def ban_user(client, message):
 async def set_owner_ads_cmd(client, message):
     if len(message.command) > 1:
         raw_links = message.text.split(None, 1)[1].split()
-        # FIX: http যুক্ত না থাকলে অটোমেটিক https যুক্ত করে নিবে
         valid =[l if l.startswith("http") else "https://" + l for l in raw_links]
         if valid:
             await set_owner_ads_db(valid)
@@ -1025,7 +1103,7 @@ async def bot_stats(client, message):
         f"💰 Admin Share: {admin_share}%"
     )
 
-# --- MYSETTINGS COMMAND (NEW FIX) ---
+# --- MYSETTINGS COMMAND ---
 @bot.on_message(filters.command("mysettings") & filters.private)
 async def my_settings_cmd(client, message):
     uid = message.from_user.id
@@ -1052,7 +1130,6 @@ async def set_ad(client, message):
         
     if len(message.command) > 1:
         raw_links = message.text.split(None, 1)[1].split()
-        # FIX: http যুক্ত না থাকলে অটোমেটিক https যুক্ত করে নিবে
         valid_links =[l if l.startswith("http") else "https://" + l for l in raw_links]
         if valid_links:
             await save_user_ads(uid, valid_links)
@@ -1217,7 +1294,6 @@ async def down_progress(current, total, status_msg, start_time, last_update_time
         except:
             pass
 
-# FIX: Added "cancel" to the exception list of text_handler
 @bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel", "setapi", "cancel"]))
 async def text_handler(client, message):
     uid = message.from_user.id
