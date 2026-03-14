@@ -376,7 +376,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Ultimate SPA Bot Running (With Auto Quality Grouping)"
+    return "🤖 Ultimate SPA Bot Running (With Background Uploading)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -628,7 +628,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         </div>
         '''
 
-    # 🔥 Screenshots Auto-Fetcher (TMDB Backdrops or Manual)
+    # 🔥 Screenshots Auto-Fetcher
     screenshots = data.get('manual_screenshots',[])
     if not screenshots and not data.get('is_manual'):
         backdrops = data.get('images', {}).get('backdrops',[])
@@ -657,46 +657,31 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         server_list_html += f'<div class="quality-title">📺 {lbl}</div>\n<div class="server-grid">\n'
         for link in grp:
             if link.get("is_grouped"):
-                # Filemoon (Premium Stream)
                 if link.get('filemoon_url'):
                     fm_b64 = base64.b64encode(link['filemoon_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{fm_b64}\')" style="background: #673AB7;">🎬 Watch on Filemoon</button>'
-                
-                # MixDrop
                 if link.get('mixdrop_url'):
                     md_b64 = base64.b64encode(link['mixdrop_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{md_b64}\')" style="background: #FFC107; color: #000;">⚡ MixDrop HD</button>'
-
-                # DoodStream
                 if link.get('dood_url'):
                     dood_b64 = base64.b64encode(link['dood_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{dood_b64}\')" style="background: #F57C00;">🎬 DoodStream</button>'
-                
-                # Streamtape
                 if link.get('stape_url'):
                     stape_b64 = base64.b64encode(link['stape_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{stape_b64}\')" style="background: #E91E63;">🎥 Streamtape</button>'
-
-                # GoFile
                 if link.get('gofile_url'):
                     go_b64 = base64.b64encode(link['gofile_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn stream-btn" onclick="goToLink(\'{go_b64}\')">▶️ GoFile Fast</button>'
                 
-                # Telegram Server
                 tg_b64 = base64.b64encode(link['tg_url'].encode('utf-8')).decode('utf-8')
                 server_list_html += f'<button class="final-server-btn tg-btn" onclick="goToLink(\'{tg_b64}\')">✈️ Telegram Fast</button>'
                 
-                # FileDitch
                 if link.get('fileditch_url'):
                     fd_b64 = base64.b64encode(link['fileditch_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{fd_b64}\')" style="background: #009688;">☁️ Direct Cloud</button>'
-
-                # TmpFiles
                 if link.get('tmpfiles_url'):
                     tmp_b64 = base64.b64encode(link['tmpfiles_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{tmp_b64}\')" style="background: #6A1B9A;">🚀 High-Speed</button>'
-
-                # PixelDrain
                 if link.get('pixel_url'):
                     px_b64 = base64.b64encode(link['pixel_url'].encode('utf-8')).decode('utf-8')
                     server_list_html += f'<button class="final-server-btn cloud-btn" onclick="goToLink(\'{px_b64}\')" style="background: #2E7D32;">⚡ Fast Server 2</button>'
@@ -1230,7 +1215,7 @@ async def manual_post_cmd(client, message):
         return
         
     user_conversations[uid] = {
-        "details": {"is_manual": True, "manual_screenshots": []},
+        "details": {"is_manual": True, "manual_screenshots":[]},
         "links":[],
         "state": "manual_title"
     }
@@ -1380,15 +1365,20 @@ async def down_progress(current, total, status_msg, start_time, last_update_time
         except:
             pass
 
-# 🔥 NEW HELPER FUNCTION FOR UPLOADING FILES (Allows Batch Queueing)
+# 🔥 BACKGROUND ASYNC UPLOAD (ALLOWS MULTIPLE AT ONCE)
 async def process_file_upload(client, message, uid, temp_name):
-    async with upload_semaphore:
-        convo = user_conversations.get(uid)
-        if not convo:
-            return
+    convo = user_conversations.get(uid)
+    if not convo:
+        return
         
-        status_msg = await message.reply_text(f"⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n({temp_name})", quote=True)
-        try:
+    # Track pending uploads so we can block the user from generating post before completion
+    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
+    
+    status_msg = await message.reply_text(f"🕒 **সারির অপেক্ষায় (Queued)...**\n({temp_name})", quote=True)
+    
+    try:
+        async with upload_semaphore:
+            await status_msg.edit_text(f"⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n({temp_name})")
             copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
             bot_username = (await client.get_me()).username
             tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
@@ -1399,7 +1389,6 @@ async def process_file_upload(client, message, uid, temp_name):
 
             await status_msg.edit_text(f"⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n({temp_name})\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও প্যারালাল আপলোড হচ্ছে)_")
             
-            # 🔥 ম্যাজিক: একসাথে ৮টি সার্ভারে প্যারালাল আপলোড (API না থাকলে স্কিপ হবে)
             gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url, filemoon_url, mixdrop_url = await asyncio.gather(
                 upload_to_gofile(file_path),
                 upload_to_fileditch(file_path),
@@ -1414,8 +1403,6 @@ async def process_file_upload(client, message, uid, temp_name):
             if os.path.exists(file_path):
                 os.remove(file_path)
                 
-            await status_msg.delete()
-
             convo["links"].append({
                 "label": temp_name,
                 "tg_url": tg_link,
@@ -1430,18 +1417,14 @@ async def process_file_upload(client, message, uid, temp_name):
                 "is_grouped": True
             })
 
-            # Check state so we only send options if NOT in batch mode
-            if convo["state"] == "wait_link_url":
-                if convo.get("post_id"):
-                     convo["state"] = "edit_mode"
-                     await message.reply_text(f"✅ **Saved 100% Genuinely!**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
-                else:
-                    convo["state"] = "ask_links"
-                    await message.reply_text(f"✅ **Saved! Total: {len(convo['links'])}**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
+            await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
+            
+    except Exception as e:
+        logger.error(f"Upload Error: {e}")
+        await status_msg.edit_text(f"❌ Failed: {e}")
+    finally:
+        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
 
-        except Exception as e:
-            logger.error(f"Upload Error: {e}")
-            await status_msg.edit_text(f"❌ Failed: {e}")
 
 @bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel", "setapi", "cancel"]))
 async def text_handler(client, message):
@@ -1517,8 +1500,19 @@ async def text_handler(client, message):
         
     elif state == "wait_link_url":
         if message.video or message.document:
-            # We use the new async helper to process this without completely blocking text_handler
+            # We use the async background task so we don't have to wait!
             asyncio.create_task(process_file_upload(client, message, uid, convo["temp_name"]))
+
+            if convo.get("post_id"):
+                 convo["state"] = "edit_mode"
+                 await message.reply_text(
+                    f"✅ **{convo['temp_name']}** ব্যাকগ্রাউন্ডে আপলোড শুরু হয়েছে!\nআপনি চাইলে আপলোড শেষ হওয়ার আগেই আরেকটি ফাইল অ্যাড করতে পারেন।", 
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
+            else:
+                convo["state"] = "ask_links"
+                await message.reply_text(
+                    f"✅ **{convo['temp_name']}** ব্যাকগ্রাউন্ডে আপলোড শুরু হয়েছে!\nআপনি চাইলে আপলোড শেষ হওয়ার আগেই আরেকটি ফাইল অ্যাড করতে পারেন।", 
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
 
         elif text.startswith("http"):
             convo["links"].append({"label": convo["temp_name"], "url": text, "is_grouped": False})
@@ -1536,14 +1530,14 @@ async def text_handler(client, message):
         if text.lower() == "/done":
             if convo.get("post_id"):
                  convo["state"] = "edit_mode"
-                 await message.reply_text(f"✅ **Batch Upload Finished! Total Files: {len(convo['links'])}**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
+                 await message.reply_text(f"✅ **Batch Files Accepted!**\nঅপেক্ষা করুন, আপলোড শেষ হলে Finish এ ক্লিক করবেন।", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
             else:
                 convo["state"] = "ask_links"
-                await message.reply_text(f"✅ **Batch Upload Finished! Total Files: {len(convo['links'])}**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
+                await message.reply_text(f"✅ **Batch Files Accepted!**\nঅপেক্ষা করুন, আপলোড শেষ হলে Finish এ ক্লিক করবেন।", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
         elif message.video or message.document:
             file_name = getattr(message.video, "file_name", None) or getattr(message.document, "file_name", None)
             if not file_name:
-                file_name = f"Episode {len(convo['links']) + 1}"
+                file_name = f"Episode {len(convo.get('links',[])) + convo.get('pending_uploads', 0) + 1}"
             
             asyncio.create_task(process_file_upload(client, message, uid, file_name))
         else:
@@ -1586,6 +1580,10 @@ async def link_cb(client, cb):
         ]
         await cb.message.edit_text("👇 বাটনের ধরন বা কোয়ালিটি সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup(btns))
     else:
+        # Check if uploads are still processing
+        if user_conversations.get(uid, {}).get("pending_uploads", 0) > 0:
+            return await cb.answer("⏳ ফাইল আপলোড শেষ হওয়া পর্যন্ত অপেক্ষা করুন...", show_alert=True)
+            
         user_conversations[uid]["state"] = "wait_badge_text"
         await cb.message.edit_text("🖼️ **Badge Text?**\n\nলিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Skip", callback_data=f"skip_badge_{uid}")]]))
 
@@ -1609,7 +1607,7 @@ async def set_lname_cb(client, cb):
     except:
         return
         
-    if action in ["1080p", "720p", "480p"]:
+    if action in["1080p", "720p", "480p"]:
         user_conversations[uid]["temp_name"] = action
         user_conversations[uid]["state"] = "wait_link_url"
         await cb.message.edit_text(f"✅ কোয়ালিটি সেট: **{action}**\n\n🔗 এবার **URL** বা **ভিডিও ফাইল** দিন:")
@@ -1628,6 +1626,10 @@ async def set_lname_cb(client, cb):
 async def gen_edit_finish(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
+        # Check if uploads are still processing
+        if user_conversations[uid].get("pending_uploads", 0) > 0:
+            return await cb.answer("⏳ ফাইল আপলোড শেষ হওয়া পর্যন্ত অপেক্ষা করুন...", show_alert=True)
+            
         await cb.answer("⏳ Generating...", show_alert=False)
         await generate_final_post(client, uid, cb.message)
 
