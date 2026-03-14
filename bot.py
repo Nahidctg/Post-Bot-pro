@@ -376,7 +376,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Ultimate SPA Bot Running (8 Servers + Filemoon + MixDrop + Batch Quality)"
+    return "🤖 Ultimate SPA Bot Running (With Auto Quality Grouping)"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -556,7 +556,6 @@ def apply_badge_to_poster(poster_bytes, text):
         box_h = text_h + (padding_y * 2)
         pos_x = (width - box_w) // 2
         
-        # 🔥 FIX: Fixed the Syntax Error properly in this block
         overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         draw_overlay.rectangle([pos_x, pos_y, pos_x + box_w, pos_y + box_h], fill=(0, 0, 0, 150))
@@ -601,7 +600,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         runtime_str = "N/A"
         cast_names = "N/A"
     else:
-        genres_list = [g['name'] for g in data.get('genres',[])]
+        genres_list =[g['name'] for g in data.get('genres',[])]
         genres_str = ", ".join(genres_list) if genres_list else "Movie"
         year = str(data.get("release_date") or data.get("first_air_date") or "----")[:4]
         rating = f"{data.get('vote_average', 0):.1f}/10"
@@ -1290,7 +1289,6 @@ async def start_edit_session(uid, post, message):
         "post_id": post["_id"]
     }
     
-    # 🔥 FIX: Fixed bracket formatting properly
     btns = [[InlineKeyboardButton("➕ Add New Link", callback_data=f"add_lnk_edit_{uid}")],[InlineKeyboardButton("✅ Generate New Code", callback_data=f"gen_edit_{uid}")]
     ]
     txt = f"📝 **Editing:** {post['details'].get('title')}\n🆔 `{post['_id']}`\n\n👇 **What to do?**"
@@ -1581,10 +1579,12 @@ async def link_cb(client, cb):
         
     if action == "lnk_yes":
         user_conversations[uid]["state"] = "wait_link_name"
-        btns = [[InlineKeyboardButton("📁 Telegram", callback_data=f"setlname_telegram_{uid}"), 
-             InlineKeyboardButton("✍️ Custom", callback_data=f"setlname_custom_{uid}")],[InlineKeyboardButton("📦 Batch Upload (Series)", callback_data=f"setlname_batch_{uid}")]
+        btns = [[InlineKeyboardButton("🎬 1080p", callback_data=f"setlname_1080p_{uid}"),
+             InlineKeyboardButton("🎬 720p", callback_data=f"setlname_720p_{uid}"),
+             InlineKeyboardButton("🎬 480p", callback_data=f"setlname_480p_{uid}")],[InlineKeyboardButton("✍️ Custom", callback_data=f"setlname_custom_{uid}"), 
+             InlineKeyboardButton("📁 Default", callback_data=f"setlname_telegram_{uid}")],[InlineKeyboardButton("📦 Batch Upload (Series)", callback_data=f"setlname_batch_{uid}")]
         ]
-        await cb.message.edit_text("👇 বাটনের ধরন সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup(btns))
+        await cb.message.edit_text("👇 বাটনের ধরন বা কোয়ালিটি সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup(btns))
     else:
         user_conversations[uid]["state"] = "wait_badge_text"
         await cb.message.edit_text("🖼️ **Badge Text?**\n\nলিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Skip", callback_data=f"skip_badge_{uid}")]]))
@@ -1594,10 +1594,12 @@ async def add_lnk_edit(client, cb):
     uid = int(cb.data.split("_")[-1])
     if uid in user_conversations:
         user_conversations[uid]["state"] = "wait_link_name"
-        btns = [[InlineKeyboardButton("📁 Telegram", callback_data=f"setlname_telegram_{uid}"), 
-             InlineKeyboardButton("✍️ Custom", callback_data=f"setlname_custom_{uid}")],[InlineKeyboardButton("📦 Batch Upload (Series)", callback_data=f"setlname_batch_{uid}")]
+        btns = [[InlineKeyboardButton("🎬 1080p", callback_data=f"setlname_1080p_{uid}"),
+             InlineKeyboardButton("🎬 720p", callback_data=f"setlname_720p_{uid}"),
+             InlineKeyboardButton("🎬 480p", callback_data=f"setlname_480p_{uid}")],[InlineKeyboardButton("✍️ Custom", callback_data=f"setlname_custom_{uid}"), 
+             InlineKeyboardButton("📁 Default", callback_data=f"setlname_telegram_{uid}")],[InlineKeyboardButton("📦 Batch Upload (Series)", callback_data=f"setlname_batch_{uid}")]
         ]
-        await cb.message.edit_text("👇 বাটনের ধরন সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup(btns))
+        await cb.message.edit_text("👇 বাটনের ধরন বা কোয়ালিটি সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup(btns))
 
 @bot.on_callback_query(filters.regex("^setlname_"))
 async def set_lname_cb(client, cb):
@@ -1607,9 +1609,13 @@ async def set_lname_cb(client, cb):
     except:
         return
         
-    if action == "custom":
+    if action in ["1080p", "720p", "480p"]:
+        user_conversations[uid]["temp_name"] = action
+        user_conversations[uid]["state"] = "wait_link_url"
+        await cb.message.edit_text(f"✅ কোয়ালিটি সেট: **{action}**\n\n🔗 এবার **URL** বা **ভিডিও ফাইল** দিন:")
+    elif action == "custom":
         user_conversations[uid]["state"] = "wait_link_name_custom"
-        await cb.message.edit_text("📝 কাস্টম বাটনের নাম লিখুন (যেমন: 1080p, 720p বা Ep-01):")
+        await cb.message.edit_text("📝 কাস্টম বাটনের নাম লিখুন (যেমন: 4K, 1080p 60fps বা Ep-01):")
     elif action == "batch":
         user_conversations[uid]["state"] = "wait_batch_files"
         await cb.message.edit_text("📦 **Batch Mode:**\n\nআপনার সিরিজের সব ফাইল বা এপিসোড একসাথে ফরোয়ার্ড করুন।\nফাইলের নামগুলোই এপিসোড নাম হিসেবে সেট হবে।\nসব দেওয়া হলে টাইপ করুন: `/done`")
