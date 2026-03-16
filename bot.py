@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 
+# 🔥 PYTHON 3.13 ASYNCIO FIX (MAGIC BYPASS) 🔥
+import asyncio
+if not hasattr(asyncio, 'coroutine'):
+    asyncio.coroutine = lambda f: f
+
 import os
 import io
 import re
 import json
 import time
-import asyncio
 import logging
+# ... (বাকি সব ইমপোর্ট এবং অরিজিনাল কোড এখান থেকে আগের মতোই থাকবে) ...
 import random
 import string
 import base64
