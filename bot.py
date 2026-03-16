@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # 🔥 PYTHON 3.13 ASYNCIO FIX (MAGIC BYPASS) 🔥
+# এই কোডটির কারণে motor ডাটাবেস আর কখনো ক্র্যাশ করবে না
 import asyncio
 if not hasattr(asyncio, 'coroutine'):
     asyncio.coroutine = lambda f: f
@@ -11,7 +12,6 @@ import re
 import json
 import time
 import logging
-# ... (বাকি সব ইমপোর্ট এবং অরিজিনাল কোড এখান থেকে আগের মতোই থাকবে) ...
 import random
 import string
 import base64
@@ -664,16 +664,14 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
     embed_links =[]
     for link in links:
         if link.get("is_grouped"):
+            # শুধু Filemoon এবং MixDrop লাইভ প্লেয়ারে থাকবে (অ্যাড কম এবং ইউজার ফ্রেন্ডলি)
             if link.get('filemoon_url'):
-                embed_links.append({'name': 'Filemoon', 'url': link['filemoon_url']})
+                embed_links.append({'name': '🎬 Filemoon HD', 'url': link['filemoon_url']})
             if link.get('mixdrop_url'):
                 m_url = link['mixdrop_url']
                 if m_url.startswith("//"): m_url = "https:" + m_url
-                embed_links.append({'name': 'MixDrop', 'url': m_url})
-            if link.get('dood_url'):
-                embed_links.append({'name': 'DoodStream', 'url': link['dood_url']})
-            if link.get('stape_url'):
-                embed_links.append({'name': 'Streamtape', 'url': link['stape_url']})
+                embed_links.append({'name': '⚡ MixDrop HD', 'url': m_url})
+            # DoodStream এবং Streamtape কে শুধু লাইভ প্লেয়ার থেকে বাদ দেওয়া হয়েছে, যাতে পপ-আপ অ্যাড না আসে। 
 
     embed_html = ""
     if embed_links:
