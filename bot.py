@@ -90,14 +90,12 @@ DEFAULT_USER_AD_LINKS =["https://www.google.com", "https://www.bing.com"]
 user_conversations = {}
 
 # 🔥 BATCH UPLOAD QUEUE LIMITER (সার্ভার লোড এবং Flood Wait রোধ করতে)
-upload_semaphore = # 🔥 BATCH UPLOAD QUEUE LIMITER (সার্ভার লোড এবং Flood Wait রোধ করতে)
-CONCURRENT_UPLOADS_LIMIT = 3  # একসাথে ৩টি ফাইল আপলোড হবে
+CONCURRENT_UPLOADS_LIMIT = 3
 upload_semaphore = asyncio.Semaphore(CONCURRENT_UPLOADS_LIMIT)
 
 # সিরিয়াল ট্র্যাক করার জন্য ভ্যারিয়েবল
 active_uploads = 0
 waiting_queue = []
-
 async def is_authorized(user_id):
     if user_id == OWNER_ID:
         return True
@@ -1524,7 +1522,6 @@ async def process_file_upload(client, message, uid, temp_name):
     waiting_queue.append(queue_item)
     my_position = len(waiting_queue)
     
-    # যদি সার্ভার বিজি থাকে, তাহলে সিরিয়াল নাম্বার দেখাবে
     if active_uploads >= CONCURRENT_UPLOADS_LIMIT:
         try:
             await status_msg.edit_text(
@@ -1535,18 +1532,15 @@ async def process_file_upload(client, message, uid, temp_name):
             )
         except: pass
 
-    # ওয়ার্কার চেক
     uploader = worker_client if (worker_client and worker_client.is_connected) else client
     
     try:
         async with upload_semaphore:
-            # নিজের সিরিয়াল রিমুভ করা এবং কাজ শুরু করা
             if queue_item in waiting_queue:
                 waiting_queue.remove(queue_item)
             
             active_uploads += 1
             
-            # বাকি যারা লাইনে আছে তাদের সিরিয়াল নাম্বার আপডেট করে দেওয়া
             for i, item in enumerate(waiting_queue):
                 try:
                     await item["msg"].edit_text(
@@ -1559,6 +1553,14 @@ async def process_file_upload(client, message, uid, temp_name):
 
             await status_msg.edit_text(f"⏳ **১/৩: ডাটাবেসে সেভ হচ্ছে...**\n(By: {'Worker' if uploader == worker_client else 'Bot'})")
             
+            # 🔥 FIX: FileReferenceExpired এরর রোধ করতে মেসেজটি নতুন করে রিফ্রেশ করা হলো
+            try:
+                fresh_message = await client.get_messages(message.chat.id, message.id)
+                if fresh_message:
+                    message = fresh_message
+            except Exception as e:
+                logger.error(f"Refresh Error: {e}")
+
             copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
             bot_username = (await client.get_me()).username
             tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
@@ -1566,7 +1568,6 @@ async def process_file_upload(client, message, uid, temp_name):
             start_time = time.time()
             last_update_time = [start_time]
             
-            # মিডিয়া ডাউনলোড
             file_path = await uploader.download_media(
                 message, 
                 progress=down_progress, 
@@ -1575,7 +1576,6 @@ async def process_file_upload(client, message, uid, temp_name):
 
             await status_msg.edit_text(f"⏳ **৩/৩: মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n({temp_name})\n_(প্যারালাল আপলোড চলছে)_")
             
-            # প্যারালাল আপলোড (Multiple Servers at once)
             results = await asyncio.gather(
                 upload_to_gofile(file_path), upload_to_fileditch(file_path), upload_to_tmpfiles(file_path),
                 upload_to_pixeldrain(file_path), upload_to_doodstream(file_path), upload_to_streamtape(file_path),
@@ -1605,63 +1605,6 @@ async def process_file_upload(client, message, uid, temp_name):
         except: pass
     finally:
         active_uploads -= 1
-        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
-    convo = user_conversations.get(uid)
-    if not convo:
-        return
-        
-    # Track pending uploads so we can block the user from generating post before completion
-    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
-    
-    status_msg = await message.reply_text(f"🕒 **সারির অপেক্ষায় (Queued)...**\n({temp_name})", quote=True)
-    
-    try:
-        async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n({temp_name})")
-            copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
-            bot_username = (await client.get_me()).username
-            tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
-            
-            start_time = time.time()
-            last_update_time =[start_time]
-            file_path = await message.download(progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
-
-            await status_msg.edit_text(f"⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n({temp_name})\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও প্যারালাল আপলোড হচ্ছে)_")
-            
-            gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url, filemoon_url, mixdrop_url = await asyncio.gather(
-                upload_to_gofile(file_path),
-                upload_to_fileditch(file_path),
-                upload_to_tmpfiles(file_path),
-                upload_to_pixeldrain(file_path),
-                upload_to_doodstream(file_path),
-                upload_to_streamtape(file_path),
-                upload_to_filemoon(file_path),
-                upload_to_mixdrop(file_path)
-            )
-
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                
-            convo["links"].append({
-                "label": temp_name,
-                "tg_url": tg_link,
-                "gofile_url": gofile_url,
-                "fileditch_url": fileditch_url,
-                "tmpfiles_url": tmpfiles_url,
-                "pixel_url": pixeldrain_url,
-                "dood_url": dood_url,
-                "stape_url": stape_url,
-                "filemoon_url": filemoon_url,
-                "mixdrop_url": mixdrop_url,
-                "is_grouped": True
-            })
-
-            await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
-            
-    except Exception as e:
-        logger.error(f"Upload Error: {e}")
-        await status_msg.edit_text(f"❌ Failed: {e}")
-    finally:
         convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
 
 
