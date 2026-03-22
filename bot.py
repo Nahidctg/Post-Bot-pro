@@ -1001,8 +1001,10 @@ def generate_image(data):
             poster_bytes = badge_io.getvalue()
 
         poster_img = Image.open(io.BytesIO(poster_bytes)).convert("RGBA").resize((400, 600))
+        
+        # 🔥 ১৮+ হলে এখানে মেইন পোস্টারটি অনেক বেশি ব্লার করা হবে
         if is_adult:
-            poster_img = poster_img.filter(ImageFilter.GaussianBlur(20))
+            poster_img = poster_img.filter(ImageFilter.GaussianBlur(radius=25))
 
         bg_img = Image.new('RGBA', (1280, 720), (10, 10, 20))
         backdrop = None
@@ -1018,28 +1020,28 @@ def generate_image(data):
         if not backdrop:
             backdrop = poster_img.resize((1280, 720))
             
-        backdrop = backdrop.filter(ImageFilter.GaussianBlur(10))
+        backdrop = backdrop.filter(ImageFilter.GaussianBlur(15))
         bg_img = Image.alpha_composite(backdrop, Image.new('RGBA', (1280, 720), (0, 0, 0, 150))) 
-        bg_img.paste(poster_img, (50, 60), poster_img)
-        draw = ImageDraw.Draw(bg_img)
         
+        # ব্লার করা পোস্টার পেস্ট করা
+        bg_img.paste(poster_img, (50, 60)) 
+        
+        draw = ImageDraw.Draw(bg_img)
         f_bold = get_font(size=36, bold=True)
         f_reg = get_font(size=24, bold=False)
 
         title = data.get("title") or data.get("name")
         year = (data.get("release_date") or data.get("first_air_date") or "----")[:4]
         
-        if data.get('is_manual'):
-            year = ""
-        if is_adult:
-            title += " (18+)"
+        if data.get('is_manual'): year = ""
+        if is_adult: title += " (18+)"
 
         draw.text((480, 80), f"{title} {year}", font=f_bold, fill="white", stroke_width=1, stroke_fill="black")
         
         if not data.get('is_manual'):
             draw.text((480, 140), f"⭐ {data.get('vote_average', 0):.1f}/10", font=f_reg, fill="#00e676")
             if is_adult:
-                draw.text((480, 180), "⚠️ RESTRICTED CONTENT", font=get_font(18), fill="#FF5252")
+                draw.text((480, 180), "⚠️ RESTRICTED CONTENT (18+)", font=get_font(20), fill="#FF5252")
             else:
                 draw.text((480, 180), " | ".join([g["name"] for g in data.get("genres",[])]), font=get_font(18), fill="#00bcd4")
         
@@ -1055,7 +1057,14 @@ def generate_image(data):
         bg_img.save(img_buffer, format="PNG")
         img_buffer.seek(0)
         
-        return img_buffer, poster_bytes 
+        # 🔥 ১৮+ হলে ওয়েবসাইটের জন্য ব্লার করা ছবির বাইটস তৈরি করা
+        p_bytes = poster_bytes
+        if is_adult:
+            blurred_io = io.BytesIO()
+            poster_img.save(blurred_io, format="PNG")
+            p_bytes = blurred_io.getvalue()
+
+        return img_buffer, p_bytes 
     except Exception as e:
         logger.error(f"Generate Image Error: {e}")
         return None, None
@@ -1846,15 +1855,23 @@ async def generate_final_post(client, uid, message):
     status_msg = await message.edit_text("⏳ **Generating Final Post...**")
 
     try:
+        # ১৮+ কিনা চেক করা
+        is_adult = convo["details"].get('adult', False) or convo["details"].get('force_adult', False)
+        
         pid = await save_post_to_db(convo["details"], convo["links"])
         loop = asyncio.get_running_loop()
+        
+        # ইমেজ জেনারেট করা
         img_io, poster_bytes = await loop.run_in_executor(None, generate_image, convo["details"])
 
-        if convo["details"].get("badge_text") and poster_bytes:
-            new_poster = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
-            if new_poster:
-                convo["details"]["manual_poster_url"] = new_poster 
+        # 🔥 যদি ১৮+ হয়, তবে ব্লার করা ছবিটি অনলাইনে আপলোড করে লিংকে সেট করা
+        if is_adult and poster_bytes:
+            # এটি আপনার অরিজিনাল catbox আপলোডার ব্যবহার করবে
+            new_poster_url = await loop.run_in_executor(None, upload_to_catbox_bytes, poster_bytes)
+            if new_poster_url:
+                convo["details"]["manual_poster_url"] = new_poster_url 
         
+        # HTML এবং Caption তৈরি (আপনার অরিজিনাল লজিক অনুযায়ী)
         html = generate_html_code(convo["details"], convo["links"], await get_user_ads(uid), await get_owner_ads(), await get_admin_share())
         caption = generate_formatted_caption(convo["details"], pid)
         convo["final"] = {"html": html}
@@ -1869,8 +1886,8 @@ async def generate_final_post(client, uid, message):
             await status_msg.delete()
             
     except Exception as e:
+        logger.error(f"Final Post Error: {e}")
         await status_msg.edit_text(f"❌ **Error:** `{e}`")
-
 @bot.on_callback_query(filters.regex("^get_code_"))
 async def get_code(client, cb):
     try:
@@ -1912,4 +1929,4 @@ if __name__ == "__main__":
         await asyncio.Event().wait()
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(main()),q
