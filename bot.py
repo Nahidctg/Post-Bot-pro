@@ -726,51 +726,51 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
         .info-text {{ flex: 1; font-size: 17px; line-height: 1.8; color: var(--text-muted); }}
         .info-text b {{ color: var(--accent); }}
 
-        /* 🔥 SMALLER BENGALI INSTRUCTION BOX 🔥 */
+        /* 🔥 LARGE BENGALI INSTRUCTION BOX 🔥 */
         .instruction-card {{ 
             background: linear-gradient(145deg, #1e1e26 0%, #111116 100%); 
-            border: 2px solid #FFEB3B; 
-            border-radius: 12px; 
-            padding: 15px; 
-            margin: 20px 0; 
-            box-shadow: 0 0 15px rgba(255, 235, 59, 0.1);
+            border: 3px solid #FFEB3B; 
+            border-radius: 18px; 
+            padding: 25px; 
+            margin: 30px 0; 
+            box-shadow: 0 0 25px rgba(255, 235, 59, 0.15);
         }}
         .instruction-title {{ 
             display: block; 
             color: #FFEB3B; 
-            font-size: 20px; 
+            font-size: 26px; 
             font-weight: 800; 
             text-align: center; 
-            margin-bottom: 12px; 
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding-bottom: 8px;
+            margin-bottom: 20px; 
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+            padding-bottom: 15px;
         }}
-        .step-row {{ display: flex; align-items: flex-start; margin-bottom: 10px; gap: 10px; }}
+        .step-row {{ display: flex; align-items: flex-start; margin-bottom: 20px; gap: 15px; }}
         .step-icon {{ 
             background: #FFEB3B; 
             color: #000; 
-            width: 28px; 
-            height: 28px; 
+            width: 38px; 
+            height: 38px; 
             border-radius: 50%; 
             display: flex; 
             align-items: center; 
             justify-content: center; 
             font-weight: 900; 
-            font-size: 16px; 
+            font-size: 20px; 
             flex-shrink: 0;
-            box-shadow: 0 0 8px #FFEB3B;
+            box-shadow: 0 0 10px #FFEB3B;
         }}
-        .step-desc {{ font-size: 16px; color: #fff; line-height: 1.4; font-weight: 500; }}
+        .step-desc {{ font-size: 20px; color: #fff; line-height: 1.5; font-weight: 500; }}
         .step-desc b {{ color: #00d2ff; font-weight: 800; }}
 
-        /* Smaller Action Buttons */
-        .action-btns {{ display: flex; flex-direction: column; gap: 15px; }}
+        /* Action Buttons */
+        .action-btns {{ display: flex; flex-direction: column; gap: 20px; }}
         .btn-main {{ 
-            width: 100%; padding: 15px; font-size: 18px; font-weight: 800; border: none; border-radius: 10px; cursor: pointer; 
-            transition: all 0.3s; color: #fff; display: flex; justify-content: center; align-items: center; gap: 10px;
-            box-shadow: 0 8px 15px rgba(0,0,0,0.3);
+            width: 100%; padding: 22px; font-size: 22px; font-weight: 800; border: none; border-radius: 12px; cursor: pointer; 
+            transition: all 0.3s; color: #fff; display: flex; justify-content: center; align-items: center; gap: 12px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
         }}
-        .btn-main:active {{ transform: scale(0.97); }}
+        .btn-main:active {{ transform: scale(0.96); }}
         .btn-watch-main {{ background: var(--btn-grad); }}
         .btn-download-main {{ background: linear-gradient(90deg, #00c853 0%, #64dd17 100%); color: #000; }}
 
@@ -865,7 +865,7 @@ def generate_html_code(data, links, user_ad_links_list, owner_ad_links_list, adm
             {trailer_html}
             {ss_html}
 
-            <!-- 📢 SMALLER BENGALI INSTRUCTION CARD -->
+            <!-- 📢 LARGE BENGALI INSTRUCTION CARD -->
             <div class="instruction-card">
                 <span class="instruction-title">📥 কিভাবে ডাউনলোড বা অনলাইনে দেখবেন?</span>
                 
@@ -1301,7 +1301,7 @@ async def manual_post_cmd(client, message):
         "links":[],
         "state": "manual_title"
     }
-    await message.reply_text("✍️ **Manual Post Started**\n\প্রথমে **টাইটেল (Title)** লিখুন:\n_(যেকোনো মুহূর্তে বাতিল করতে /cancel কমান্ড দিন)_")
+    await message.reply_text("✍️ **Manual Post Started**\n\nপ্রথমে **টাইটেল (Title)** লিখুন:\n_(যেকোনো মুহূর্তে বাতিল করতে /cancel কমান্ড দিন)_")
 
 @bot.on_message(filters.command("history") & filters.private)
 async def history_cmd(client, message):
@@ -1498,6 +1498,63 @@ async def process_file_upload(client, message, uid, temp_name):
                 "mixdrop_url": results[7] if not isinstance(results[7], Exception) else None,
                 "is_grouped": True
             })
+            await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
+            
+    except Exception as e:
+        logger.error(f"Upload Error: {e}")
+        await status_msg.edit_text(f"❌ Failed: {e}")
+    finally:
+        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
+    convo = user_conversations.get(uid)
+    if not convo:
+        return
+        
+    # Track pending uploads so we can block the user from generating post before completion
+    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
+    
+    status_msg = await message.reply_text(f"🕒 **সারির অপেক্ষায় (Queued)...**\n({temp_name})", quote=True)
+    
+    try:
+        async with upload_semaphore:
+            await status_msg.edit_text(f"⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n({temp_name})")
+            copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
+            bot_username = (await client.get_me()).username
+            tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
+            
+            start_time = time.time()
+            last_update_time =[start_time]
+            file_path = await message.download(progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
+
+            await status_msg.edit_text(f"⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n({temp_name})\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও প্যারালাল আপলোড হচ্ছে)_")
+            
+            gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url, filemoon_url, mixdrop_url = await asyncio.gather(
+                upload_to_gofile(file_path),
+                upload_to_fileditch(file_path),
+                upload_to_tmpfiles(file_path),
+                upload_to_pixeldrain(file_path),
+                upload_to_doodstream(file_path),
+                upload_to_streamtape(file_path),
+                upload_to_filemoon(file_path),
+                upload_to_mixdrop(file_path)
+            )
+
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                
+            convo["links"].append({
+                "label": temp_name,
+                "tg_url": tg_link,
+                "gofile_url": gofile_url,
+                "fileditch_url": fileditch_url,
+                "tmpfiles_url": tmpfiles_url,
+                "pixel_url": pixeldrain_url,
+                "dood_url": dood_url,
+                "stape_url": stape_url,
+                "filemoon_url": filemoon_url,
+                "mixdrop_url": mixdrop_url,
+                "is_grouped": True
+            })
+
             await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
             
     except Exception as e:
