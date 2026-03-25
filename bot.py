@@ -1571,7 +1571,88 @@ async def process_file_upload(client, message, uid, temp_name):
         logger.error(f"Upload Error: {e}")
         await status_msg.edit_text(f"❌ Failed: {e}")
     finally:
+        convo["pending_uploads"] = max(0, 
+        # 🔥 NEW: এই ফাংশনটি ডিরেক্ট লিঙ্ক থেকে ফাইল ডাউনলোড করে রিনেম করবে
+async def process_url_upload(client, uid, url, temp_name):
+    convo = user_conversations.get(uid)
+    if not convo: return
+    
+    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
+    status_msg = await client.send_message(uid, f"🌐 **লিঙ্কটি প্রসেস করছি...**\n`{temp_name}`")
+    
+    # ফাইল এক্সটেনশন বের করা (.mp4 বা .mkv)
+    ext = ".mp4"
+    if "." in url.split("/")[-1]:
+        ext = "." + url.split("/")[-1].split(".")[-1].split("?")[0]
+        if len(ext) > 5: ext = ".mp4" 
+
+    file_path = f"{temp_name}{ext}"
+
+    try:
+        async with upload_semaphore:
+            await status_msg.edit_text(f"⏳ **১/৩: সার্ভারে ডাউনলোড হচ্ছে...**\n📂 নাম: `{file_path}`")
+            
+            start_time = time.time()
+            last_update_time = [start_time]
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=None, allow_redirects=True) as resp:
+                    if resp.status != 200:
+                        return await status_msg.edit_text("❌ ডাউনলোড ফেইলড! লিঙ্কটি কাজ করছে না।")
+                    
+                    total_size = int(resp.headers.get('content-length', 0))
+                    current_size = 0
+                    
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(1024*1024):
+                            f.write(chunk)
+                            current_size += len(chunk)
+                            await down_progress(current_size, total_size, status_msg, start_time, last_update_time)
+
+            await status_msg.edit_text(f"⏳ **২/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**")
+            
+            # রিনেম করা ফাইলটি টেলিগ্রামে আপলোড (DB_CHANNEL_ID তে যাবে)
+            tg_msg = await client.send_document(
+                chat_id=DB_CHANNEL_ID,
+                document=file_path,
+                file_name=file_path,
+                caption=f"🎬 **{temp_name}**"
+            )
+            bot_username = (await client.get_me()).username
+            tg_link = f"https://t.me/{bot_username}?start=get-{tg_msg.id}"
+
+            await status_msg.edit_text(f"⏳ **৩/৩: মাল্টি-সার্ভারে আপলোড হচ্ছে...**")
+            
+            # মিরর আপলোড (প্যারালাল)
+            results = await asyncio.gather(
+                upload_to_gofile(file_path), upload_to_fileditch(file_path), upload_to_tmpfiles(file_path),
+                upload_to_pixeldrain(file_path), upload_to_doodstream(file_path), upload_to_streamtape(file_path),
+                upload_to_filemoon(file_path), upload_to_mixdrop(file_path), return_exceptions=True
+            )
+
+            if os.path.exists(file_path): os.remove(file_path)
+            
+            convo["links"].append({
+                "label": temp_name, "tg_url": tg_link, 
+                "gofile_url": results[0] if not isinstance(results[0], Exception) else None,
+                "fileditch_url": results[1] if not isinstance(results[1], Exception) else None,
+                "tmpfiles_url": results[2] if not isinstance(results[2], Exception) else None,
+                "pixel_url": results[3] if not isinstance(results[3], Exception) else None,
+                "dood_url": results[4] if not isinstance(results[4], Exception) else None,
+                "stape_url": results[5] if not isinstance(results[5], Exception) else None,
+                "filemoon_url": results[6] if not isinstance(results[6], Exception) else None,
+                "mixdrop_url": results[7] if not isinstance(results[7], Exception) else None,
+                "is_grouped": True
+            })
+            await status_msg.edit_text(f"✅ **সফলভাবে সম্পন্ন:** {temp_name}")
+            
+    except Exception as e:
+        logger.error(f"URL Error: {e}")
+        await status_msg.edit_text(f"❌ এরর: {e}")
+        if os.path.exists(file_path): os.remove(file_path)
+    finally:
         convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
+        convo.get("pending_uploads", 0) - 1)
     convo = user_conversations.get(uid)
     if not convo:
         return
