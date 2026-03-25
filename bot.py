@@ -1872,6 +1872,35 @@ async def link_cb(client, cb):
             
         user_conversations[uid]["state"] = "wait_badge_text"
         await cb.message.edit_text("🖼️ **Badge Text?**\n\nলিখে পাঠান অথবা Skip করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Skip", callback_data=f"skip_badge_{uid}")]]))
+@bot.on_callback_query(filters.regex("^urlmode_"))
+async def url_mode_handler(client, cb):
+    try:
+        _, mode, uid = cb.data.split("_")
+        uid = int(uid)
+    except: return
+    
+    convo = user_conversations.get(uid)
+    if not convo: return await cb.answer("সেশন শেষ!", show_alert=True)
+    
+    url = convo.pop("temp_url")
+    name = convo.get("temp_name")
+    
+    if mode == "mirror":
+        await cb.message.edit_text("⏳ **লিচিং (Remote Mirror) শুরু হয়েছে...**")
+        # আমাদের নতুন URL আপলোড ফাংশন কল করা হলো
+        asyncio.create_task(process_url_upload(client, uid, url, name))
+    else:
+        # শুধু সাধারণ লিঙ্ক হিসেবে সেভ করা
+        convo["links"].append({"label": name, "url": url, "is_grouped": False})
+        await cb.message.edit_text(f"✅ লিঙ্ক হিসেবে সেভ করা হয়েছে: {name}")
+
+    # কাজ শেষ হলে পরবর্তী ধাপে পাঠানো (অরিজিনাল কোডের মতো)
+    if convo.get("post_id"):
+        convo["state"] = "edit_mode"
+        await client.send_message(uid, "পরবর্তী কাজ সিলেক্ট করুন:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add More", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
+    else:
+        convo["state"] = "ask_links"
+        await client.send_message(uid, "আরও লিঙ্ক যোগ করবেন?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
 
 @bot.on_callback_query(filters.regex("^add_lnk_edit_"))
 async def add_lnk_edit(client, cb):
