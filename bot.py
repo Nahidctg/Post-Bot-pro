@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 
 # 🔥 PYTHON 3.13 ASYNCIO FIX (MAGIC BYPASS) 🔥
 # এই কোডটির কারণে motor ডাটাবেস আর কখনো ক্র্যাশ করবে না
@@ -1514,7 +1514,7 @@ async def down_progress(current, total, status_msg, start_time, last_update_time
         except:
             pass
 
-# 🔥 BACKGROUND ASYNC UPLOAD (ALLOWS MULTIPLE AT ONCE)
+# 🔥 BACKGROUND ASYNC UPLOAD (FILES)
 async def process_file_upload(client, message, uid, temp_name):
     convo = user_conversations.get(uid)
     if not convo: return
@@ -1522,29 +1522,20 @@ async def process_file_upload(client, message, uid, temp_name):
     convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
     status_msg = await message.reply_text(f"🕒 **সারির অপেক্ষায়...**\n({temp_name})", quote=True)
     
-    # ওয়ার্কার চেক: ওয়ার্কার থাকলে সেটা দিয়ে ডাউনলোড হবে, নাহলে মেইন বোট দিয়ে
     uploader = worker_client if (worker_client and worker_client.is_connected) else client
     
     try:
         async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: ডাটাবেসে সেভ হচ্ছে...**\n(By: {'Worker' if uploader == worker_client else 'Bot'})")
+            await status_msg.edit_text(f"⏳ **১/৩: ডাটাবেসে সেভ হচ্ছে...**")
             copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
             bot_username = (await client.get_me()).username
             tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
             
             start_time = time.time()
             last_update_time =[start_time]
-            
-            # মিডিয়া ডাউনলোড
-            file_path = await uploader.download_media(
-                message, 
-                progress=down_progress, 
-                progress_args=(status_msg, start_time, last_update_time)
-            )
+            file_path = await uploader.download_media(message, progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
 
             await status_msg.edit_text(f"⏳ **৩/৩: মাল্টি-সার্ভারে আপলোড হচ্ছে...**")
-            
-            # প্যারালাল আপলোড (Parallel Upload)
             results = await asyncio.gather(
                 upload_to_gofile(file_path), upload_to_fileditch(file_path), upload_to_tmpfiles(file_path),
                 upload_to_pixeldrain(file_path), upload_to_doodstream(file_path), upload_to_streamtape(file_path),
@@ -1566,310 +1557,61 @@ async def process_file_upload(client, message, uid, temp_name):
                 "is_grouped": True
             })
             await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
-            
     except Exception as e:
         logger.error(f"Upload Error: {e}")
         await status_msg.edit_text(f"❌ Failed: {e}")
     finally:
         convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
 
-# 🔥 NEW: এই ফাংশনটি ডিরেক্ট লিঙ্ক থেকে ফাইল ডাউনলোড করে রিনেম করবে
+# 🔥 URL REMOTE UPLOAD
 async def process_url_upload(client, uid, url, temp_name):
     convo = user_conversations.get(uid)
     if not convo: return
-    
     convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
     status_msg = await client.send_message(uid, f"🌐 **লিঙ্কটি প্রসেস করছি...**\n`{temp_name}`")
-    
-    # ফাইল এক্সটেনশন বের করা
     ext = ".mp4"
     if "." in url.split("/")[-1]:
         ext = "." + url.split("/")[-1].split(".")[-1].split("?")[0]
         if len(ext) > 5: ext = ".mp4" 
-
     file_path = f"{temp_name}{ext}"
-
     try:
         async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: সার্ভারে ডাউনলোড হচ্ছে...**\n📂 নাম: `{file_path}`")
-            
+            await status_msg.edit_text(f"⏳ **১/৩: সার্ভারে ডাউনলোড হচ্ছে...**")
             start_time = time.time()
             last_update_time = [start_time]
-            
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=None, allow_redirects=True) as resp:
-                    if resp.status != 200:
-                        return await status_msg.edit_text("❌ ডাউনলোড ফেইলড! লিঙ্কটি কাজ করছে না।")
-                    
+                    if resp.status != 200: return await status_msg.edit_text("❌ লিঙ্ক কাজ করছে না।")
                     total_size = int(resp.headers.get('content-length', 0))
                     current_size = 0
-                    
                     with open(file_path, 'wb') as f:
                         async for chunk in resp.content.iter_chunked(1024*1024):
                             f.write(chunk)
                             current_size += len(chunk)
                             await down_progress(current_size, total_size, status_msg, start_time, last_update_time)
-
             await status_msg.edit_text(f"⏳ **২/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**")
-            
-            tg_msg = await client.send_document(
-                chat_id=DB_CHANNEL_ID,
-                document=file_path,
-                file_name=file_path,
-                caption=f"🎬 **{temp_name}**"
-            )
+            tg_msg = await client.send_document(chat_id=DB_CHANNEL_ID, document=file_path, file_name=file_path, caption=f"🎬 **{temp_name}**")
             bot_username = (await client.get_me()).username
             tg_link = f"https://t.me/{bot_username}?start=get-{tg_msg.id}"
-
             await status_msg.edit_text(f"⏳ **৩/৩: মাল্টি-সার্ভারে আপলোড হচ্ছে...**")
-            
             results = await asyncio.gather(
                 upload_to_gofile(file_path), upload_to_fileditch(file_path), upload_to_tmpfiles(file_path),
                 upload_to_pixeldrain(file_path), upload_to_doodstream(file_path), upload_to_streamtape(file_path),
                 upload_to_filemoon(file_path), upload_to_mixdrop(file_path), return_exceptions=True
             )
-
             if os.path.exists(file_path): os.remove(file_path)
-            
-            convo["links"].append({
-                "label": temp_name, "tg_url": tg_link, 
-                "gofile_url": results[0] if not isinstance(results[0], Exception) else None,
-                "fileditch_url": results[1] if not isinstance(results[1], Exception) else None,
-                "tmpfiles_url": results[2] if not isinstance(results[2], Exception) else None,
-                "pixel_url": results[3] if not isinstance(results[3], Exception) else None,
-                "dood_url": results[4] if not isinstance(results[4], Exception) else None,
-                "stape_url": results[5] if not isinstance(results[5], Exception) else None,
-                "filemoon_url": results[6] if not isinstance(results[6], Exception) else None,
-                "mixdrop_url": results[7] if not isinstance(results[7], Exception) else None,
-                "is_grouped": True
-            })
-            await status_msg.edit_text(f"✅ **সফলভাবে সম্পন্ন:** {temp_name}")
-            
+            convo["links"].append({"label": temp_name, "tg_url": tg_link, "is_grouped": True, "gofile_url": results[0], "filemoon_url": results[6], "mixdrop_url": results[7]})
+            await status_msg.edit_text(f"✅ ** সম্পন্ন:** {temp_name}")
     except Exception as e:
-        logger.error(f"URL Error: {e}")
         await status_msg.edit_text(f"❌ এরর: {e}")
-        if os.path.exists(file_path): os.remove(file_path)
     finally:
         convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
 
-# 🔥 NEW: এই ফাংশনটি ডিরেক্ট লিঙ্ক থেকে ফাইল ডাউনলোড করে রিনেম করবে
-async def process_url_upload(client, uid, url, temp_name):
-    convo = user_conversations.get(uid)
-    if not convo: return
-    
-    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
-    status_msg = await client.send_message(uid, f"🌐 **লিঙ্কটি প্রসেস করছি...**\n`{temp_name}`")
-    
-    # ফাইল এক্সটেনশন বের করা (.mp4 বা .mkv)
-    ext = ".mp4"
-    if "." in url.split("/")[-1]:
-        ext = "." + url.split("/")[-1].split(".")[-1].split("?")[0]
-        if len(ext) > 5: ext = ".mp4" 
-
-    file_path = f"{temp_name}{ext}"
-
-    try:
-        async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: সার্ভারে ডাউনলোড হচ্ছে...**\n📂 নাম: `{file_path}`")
-            
-            start_time = time.time()
-            last_update_time = [start_time]
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=None, allow_redirects=True) as resp:
-                    if resp.status != 200:
-                        return await status_msg.edit_text("❌ ডাউনলোড ফেইলড! লিঙ্কটি কাজ করছে না।")
-                    
-                    total_size = int(resp.headers.get('content-length', 0))
-                    current_size = 0
-                    
-                    with open(file_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(1024*1024):
-                            f.write(chunk)
-                            current_size += len(chunk)
-                            await down_progress(current_size, total_size, status_msg, start_time, last_update_time)
-
-            await status_msg.edit_text(f"⏳ **২/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**")
-            
-            # রিনেম করা ফাইলটি টেলিগ্রামে আপলোড
-            tg_msg = await client.send_document(
-                chat_id=DB_CHANNEL_ID,
-                document=file_path,
-                file_name=file_path,
-                caption=f"🎬 **{temp_name}**"
-            )
-            bot_username = (await client.get_me()).username
-            tg_link = f"https://t.me/{bot_username}?start=get-{tg_msg.id}"
-
-            await status_msg.edit_text(f"⏳ **৩/৩: মাল্টি-সার্ভারে আপলোড হচ্ছে...**")
-            
-            results = await asyncio.gather(
-                upload_to_gofile(file_path), upload_to_fileditch(file_path), upload_to_tmpfiles(file_path),
-                upload_to_pixeldrain(file_path), upload_to_doodstream(file_path), upload_to_streamtape(file_path),
-                upload_to_filemoon(file_path), upload_to_mixdrop(file_path), return_exceptions=True
-            )
-
-            if os.path.exists(file_path): os.remove(file_path)
-            
-            convo["links"].append({
-                "label": temp_name, "tg_url": tg_link, 
-                "gofile_url": results[0] if not isinstance(results[0], Exception) else None,
-                "fileditch_url": results[1] if not isinstance(results[1], Exception) else None,
-                "tmpfiles_url": results[2] if not isinstance(results[2], Exception) else None,
-                "pixel_url": results[3] if not isinstance(results[3], Exception) else None,
-                "dood_url": results[4] if not isinstance(results[4], Exception) else None,
-                "stape_url": results[5] if not isinstance(results[5], Exception) else None,
-                "filemoon_url": results[6] if not isinstance(results[6], Exception) else None,
-                "mixdrop_url": results[7] if not isinstance(results[7], Exception) else None,
-                "is_grouped": True
-            })
-            await status_msg.edit_text(f"✅ **সফলভাবে সম্পন্ন:** {temp_name}")
-            
-    except Exception as e:
-        logger.error(f"URL Error: {e}")
-        await status_msg.edit_text(f"❌ এরর: {e}")
-        if os.path.exists(file_path): os.remove(file_path)
-    finally:
-        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)    status_msg = await client.send_message(uid, f"🌐 **লিঙ্কটি প্রসেস করছি...**\n`{temp_name}`")
-    
-    # ফাইল এক্সটেনশন বের করা (.mp4 বা .mkv)
-    ext = ".mp4"
-    if "." in url.split("/")[-1]:
-        ext = "." + url.split("/")[-1].split(".")[-1].split("?")[0]
-        if len(ext) > 5: ext = ".mp4" 
-
-    file_path = f"{temp_name}{ext}"
-
-    try:
-        async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: সার্ভারে ডাউনলোড হচ্ছে...**\n📂 নাম: `{file_path}`")
-            
-            start_time = time.time()
-            last_update_time = [start_time]
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=None, allow_redirects=True) as resp:
-                    if resp.status != 200:
-                        return await status_msg.edit_text("❌ ডাউনলোড ফেইলড! লিঙ্কটি কাজ করছে না।")
-                    
-                    total_size = int(resp.headers.get('content-length', 0))
-                    current_size = 0
-                    
-                    with open(file_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(1024*1024):
-                            f.write(chunk)
-                            current_size += len(chunk)
-                            await down_progress(current_size, total_size, status_msg, start_time, last_update_time)
-
-            await status_msg.edit_text(f"⏳ **২/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**")
-            
-            # রিনেম করা ফাইলটি টেলিগ্রামে আপলোড (DB_CHANNEL_ID তে যাবে)
-            tg_msg = await client.send_document(
-                chat_id=DB_CHANNEL_ID,
-                document=file_path,
-                file_name=file_path,
-                caption=f"🎬 **{temp_name}**"
-            )
-            bot_username = (await client.get_me()).username
-            tg_link = f"https://t.me/{bot_username}?start=get-{tg_msg.id}"
-
-            await status_msg.edit_text(f"⏳ **৩/৩: মাল্টি-সার্ভারে আপলোড হচ্ছে...**")
-            
-            # মিরর আপলোড (প্যারালাল)
-            results = await asyncio.gather(
-                upload_to_gofile(file_path), upload_to_fileditch(file_path), upload_to_tmpfiles(file_path),
-                upload_to_pixeldrain(file_path), upload_to_doodstream(file_path), upload_to_streamtape(file_path),
-                upload_to_filemoon(file_path), upload_to_mixdrop(file_path), return_exceptions=True
-            )
-
-            if os.path.exists(file_path): os.remove(file_path)
-            
-            convo["links"].append({
-                "label": temp_name, "tg_url": tg_link, 
-                "gofile_url": results[0] if not isinstance(results[0], Exception) else None,
-                "fileditch_url": results[1] if not isinstance(results[1], Exception) else None,
-                "tmpfiles_url": results[2] if not isinstance(results[2], Exception) else None,
-                "pixel_url": results[3] if not isinstance(results[3], Exception) else None,
-                "dood_url": results[4] if not isinstance(results[4], Exception) else None,
-                "stape_url": results[5] if not isinstance(results[5], Exception) else None,
-                "filemoon_url": results[6] if not isinstance(results[6], Exception) else None,
-                "mixdrop_url": results[7] if not isinstance(results[7], Exception) else None,
-                "is_grouped": True
-            })
-            await status_msg.edit_text(f"✅ **সফলভাবে সম্পন্ন:** {temp_name}")
-            
-    except Exception as e:
-        logger.error(f"URL Error: {e}")
-        await status_msg.edit_text(f"❌ এরর: {e}")
-        if os.path.exists(file_path): os.remove(file_path)
-    finally:
-        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
-        convo.get("pending_uploads", 0) - 1)
-    convo = user_conversations.get(uid)
-    if not convo:
-        return
-        
-    # Track pending uploads so we can block the user from generating post before completion
-    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
-    
-    status_msg = await message.reply_text(f"🕒 **সারির অপেক্ষায় (Queued)...**\n({temp_name})", quote=True)
-    
-    try:
-        async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n({temp_name})")
-            copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
-            bot_username = (await client.get_me()).username
-            tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
-            
-            start_time = time.time()
-            last_update_time =[start_time]
-            file_path = await message.download(progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
-
-            await status_msg.edit_text(f"⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n({temp_name})\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও প্যারালাল আপলোড হচ্ছে)_")
-            
-            gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url, filemoon_url, mixdrop_url = await asyncio.gather(
-                upload_to_gofile(file_path),
-                upload_to_fileditch(file_path),
-                upload_to_tmpfiles(file_path),
-                upload_to_pixeldrain(file_path),
-                upload_to_doodstream(file_path),
-                upload_to_streamtape(file_path),
-                upload_to_filemoon(file_path),
-                upload_to_mixdrop(file_path)
-            )
-
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                
-            convo["links"].append({
-                "label": temp_name,
-                "tg_url": tg_link,
-                "gofile_url": gofile_url,
-                "fileditch_url": fileditch_url,
-                "tmpfiles_url": tmpfiles_url,
-                "pixel_url": pixeldrain_url,
-                "dood_url": dood_url,
-                "stape_url": stape_url,
-                "filemoon_url": filemoon_url,
-                "mixdrop_url": mixdrop_url,
-                "is_grouped": True
-            })
-
-            await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
-            
-    except Exception as e:
-        logger.error(f"Upload Error: {e}")
-        await status_msg.edit_text(f"❌ Failed: {e}")
-    finally:
-        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
-
-
+# 🔥 MAIN TEXT HANDLER
 @bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel", "setapi", "cancel"]))
 async def text_handler(client, message):
     uid = message.from_user.id
-    if uid not in user_conversations:
-        return
-    
+    if uid not in user_conversations: return
     convo = user_conversations[uid]
     state = convo.get("state")
     text = message.text.strip() if message.text else ""
@@ -1878,112 +1620,55 @@ async def text_handler(client, message):
         convo["details"]["title"] = text
         convo["state"] = "manual_plot"
         await message.reply_text("📝 এবার মুভির **গল্প/Plot** লিখুন:")
-        
     elif state == "manual_plot":
         convo["details"]["overview"] = text
         convo["state"] = "manual_poster"
         await message.reply_text("🖼️ এবার একটি **পোস্টার (Photo)** সেন্ড করুন:")
-        
     elif state == "manual_poster":
-        if not message.photo:
-            return await message.reply_text("⚠️ দয়া করে ছবি পাঠান।")
-            
-        msg = await message.reply_text("⏳ Processing Poster...")
-        try:
-            photo_path = await message.download()
-            img_url = upload_to_catbox(photo_path) 
-            os.remove(photo_path)
-            
-            if img_url:
-                convo["details"]["manual_poster_url"] = img_url
-                convo["state"] = "ask_screenshots"
-                await msg.edit_text("✅ Poster Uploaded!\n\n📸 **Add Custom Screenshots?**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📸 Add", callback_data=f"ss_yes_{uid}"), InlineKeyboardButton("⏭️ Skip", callback_data=f"ss_no_{uid}")]]))
-            else:
-                await msg.edit_text("❌ Upload Failed.")
-        except:
-            await msg.edit_text("❌ Error uploading.")
-
+        if not message.photo: return await message.reply_text("⚠️ ছবি পাঠান।")
+        photo_path = await message.download()
+        img_url = upload_to_catbox(photo_path)
+        os.remove(photo_path)
+        convo["details"]["manual_poster_url"] = img_url
+        convo["state"] = "ask_screenshots"
+        await message.reply_text("✅ Poster OK!\n📸 **Add Screenshots?**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📸 Add", callback_data=f"ss_yes_{uid}"), InlineKeyboardButton("⏭️ Skip", callback_data=f"ss_no_{uid}")]]))
     elif state == "wait_screenshots":
-        if not message.photo:
-            return await message.reply_text("⚠️ Please send PHOTO.")
-            
-        msg = await message.reply_text("⏳ Uploading SS...")
-        try:
-            photo_path = await message.download()
-            ss_url = upload_to_catbox(photo_path)
-            os.remove(photo_path)
-            
-            if ss_url:
-                if "manual_screenshots" not in convo["details"]:
-                    convo["details"]["manual_screenshots"] =[]
-                convo["details"]["manual_screenshots"].append(ss_url)
-                await msg.edit_text(f"✅ Screenshot Added!\nSend another or click DONE.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ DONE", callback_data=f"ss_done_{uid}")]]))
-        except:
-            pass
-
+        if not message.photo: return
+        photo_path = await message.download()
+        ss_url = upload_to_catbox(photo_path)
+        os.remove(photo_path)
+        if "manual_screenshots" not in convo["details"]: convo["details"]["manual_screenshots"] = []
+        convo["details"]["manual_screenshots"].append(ss_url)
+        await message.reply_text("✅ Added! Click DONE when finished.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ DONE", callback_data=f"ss_done_{uid}")]]))
     elif state == "wait_lang":
         convo["details"]["custom_language"] = text
         convo["state"] = "wait_quality"
         await message.reply_text("💿 Enter **Quality**:")
-        
     elif state == "wait_quality":
         convo["details"]["custom_quality"] = text
         convo["state"] = "ask_links"
-        await message.reply_text("🔗 Add Download Links?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Links", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
-        
+        await message.reply_text("🔗 Add Links?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Links", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
     elif state == "wait_link_name_custom":
         convo["temp_name"] = text
         convo["state"] = "wait_link_url"
-        await message.reply_text(f"✅ নাম সেট: **{text}**\n\n🔗 এবার **URL** দিন অথবা **ভিডিও ফাইলটি** ফরোয়ার্ড করুন:")
-        
+        await message.reply_text(f"✅ নাম: {text}\n🔗 URL দিন অথবা ভিডিও ফাইল ফরোয়ার্ড করুন:")
     elif state == "wait_link_url":
         if message.video or message.document:
             asyncio.create_task(process_file_upload(client, message, uid, convo["temp_name"]))
-
-            if convo.get("post_id"):
-                 convo["state"] = "edit_mode"
-                 await message.reply_text(
-                    f"✅ **{convo['temp_name']}** আপলোড শুরু হয়েছে!", 
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
-            else:
-                convo["state"] = "ask_links"
-                await message.reply_text(
-                    f"✅ **{convo['temp_name']}** আপলোড শুরু হয়েছে!", 
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
-
+            await message.reply_text("⏳ আপলোড শুরু হয়েছে।")
         elif text.startswith("http"):
-            # 🔥 নতুন লজিক: ইউজারকে অপশন দেওয়া হবে
             convo["temp_url"] = text
             convo["state"] = "ask_url_mode"
-            btns = [
-                [InlineKeyboardButton("🚀 Mirror (Download & Rename)", callback_data=f"urlmode_mirror_{uid}")],
-                [InlineKeyboardButton("🔗 Just Save as Link", callback_data=f"urlmode_save_{uid}")]
-            ]
-            await message.reply_text("❓ **এই লিঙ্কটি নিয়ে আমি কি করবো?**\n\nআপনি যদি 'Mirror' এ ক্লিক করেন, তবে আমি এটি ডাউনলোড করে আপনার দেওয়া নামে রিনেম করে সব সার্ভারে আপলোড করবো।", reply_markup=InlineKeyboardMarkup(btns))
-        else:
-            await message.reply_text("⚠️ Invalid Input. URL or File required.")
-    
-    # 🔥 NEW BATCH HANDLER
+            await message.reply_text("❓ লিঙ্কটি কি করবো?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Mirror", callback_data=f"urlmode_mirror_{uid}"), InlineKeyboardButton("🔗 Just Save", callback_data=f"urlmode_save_{uid}")]]))
     elif state == "wait_batch_files":
         if text.lower() == "/done":
-            if convo.get("post_id"):
-                 convo["state"] = "edit_mode"
-                 await message.reply_text(f"✅ **Batch Files Accepted!**\nঅপেক্ষা করুন, আপলোড শেষ হলে Finish এ ক্লিক করবেন।", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Link", callback_data=f"add_lnk_edit_{uid}"), InlineKeyboardButton("✅ Finish", callback_data=f"gen_edit_{uid}")]]))
-            else:
-                convo["state"] = "ask_links"
-                await message.reply_text(f"✅ **Batch Files Accepted!**\nঅপেক্ষা করুন, আপলোড শেষ হলে Finish এ ক্লিক করবেন।", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Another", callback_data=f"lnk_yes_{uid}"), InlineKeyboardButton("🏁 Finish", callback_data=f"lnk_no_{uid}")]]))
+            await message.reply_text("✅ Batch Accepted. Wait for finish.")
         elif message.video or message.document:
-            file_name = getattr(message.video, "file_name", None) or getattr(message.document, "file_name", None)
-            if not file_name:
-                file_name = f"Episode {len(convo.get('links',[])) + convo.get('pending_uploads', 0) + 1}"
-            
+            file_name = getattr(message.video, "file_name", "File")
             asyncio.create_task(process_file_upload(client, message, uid, file_name))
-        else:
-            await message.reply_text("⚠️ দয়া করে ভিডিও/ফাইল দিন অথবা শেষ হলে /done লিখুন।")
-
     elif state == "wait_badge_text":
         convo["details"]["badge_text"] = text
-        await message.reply_text("🛡️ **Safety Check:**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}"), InlineKeyboardButton("🔞 18+", callback_data=f"safe_no_{uid}")]]))
+        await message.reply_text("🛡️ Safety Check:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Safe", callback_data=f"safe_yes_{uid}"), InlineKeyboardButton("🔞 18+", callback_data=f"safe_no_{uid}")]]))
 
 @bot.on_callback_query(filters.regex("^ss_"))
 async def ss_cb(client, cb):
