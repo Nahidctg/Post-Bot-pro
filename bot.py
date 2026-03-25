@@ -9,6 +9,8 @@ if not hasattr(asyncio, 'coroutine'):
 import os
 import io
 import re
+import importlib
+import pkgutil
 import json
 import time
 import logging
