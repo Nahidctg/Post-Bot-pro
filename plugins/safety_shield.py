@@ -3,11 +3,11 @@ import __main__
 import json
 
 # --- 🔞 ১৮+ মুভি চেনার জন্য কিওয়ার্ড লিস্ট ---
-ADULT_KEYWORDS = ["erotic", "porn", "sexy", "nudity", "adult", "18+", "uncut", "kink"]
+ADULT_KEYWORDS = ["erotic", "porn", "sexy", "nudity", "adult", "18+", "uncut", "kink", "sex"]
 
 def is_content_adult(data):
     # ১. TMDB এর অফিসিয়াল অ্যাডাল্ট ফ্ল্যাগ চেক করা
-    if data.get('adult') or data.get('force_adult'):
+    if data.get('adult') is True or data.get('force_adult') is True:
         return True
     
     # ২. টাইটেল বা ওভারভিউতে খারাপ শব্দ আছে কি না চেক করা
@@ -25,15 +25,19 @@ def get_safety_shield_code(is_adult):
     if is_adult:
         blur_css = """
         <style>
-            .nsfw-blur { filter: blur(30px) !important; transition: 0.5s ease; cursor: pointer; }
-            .nsfw-container { position: relative; overflow: hidden; border-radius: 15px; }
+            .nsfw-container { position: relative; cursor: pointer; overflow: hidden; display: inline-block; width: 100%; }
+            .nsfw-blur { filter: blur(40px); transition: filter 0.3s ease; }
             .nsfw-overlay { 
-                position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: rgba(0,0,0,0.8); color: #ff5252; padding: 10px 20px;
-                border-radius: 50px; font-weight: bold; font-size: 14px;
-                border: 2px solid #ff5252; pointer-events: none; z-index: 10;
-                white-space: nowrap; text-shadow: 0 0 10px #ff5252;
+                position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.7); color: #ff5252; 
+                display: flex; align-items: center; justify-content: center;
+                flex-direction: column; z-index: 10; transition: 0.3s;
+                border: 2px solid #ff5252; border-radius: 10px;
+                text-align: center; padding: 10px; box-sizing: border-box;
             }
+            .nsfw-overlay b { font-size: 18px; text-shadow: 0 0 10px #ff5252; }
+            .revealed .nsfw-blur { filter: blur(0px) !important; }
+            .revealed .nsfw-overlay { display: none !important; }
         </style>
         """
     
@@ -47,12 +51,8 @@ def get_safety_shield_code(is_adult):
     
     reveal_js = """
     <script>
-    function revealImage(el) {
-        let img = el.querySelector('img');
-        let overlay = el.querySelector('.nsfw-overlay');
-        if(img) img.classList.remove('nsfw-blur');
-        if(overlay) overlay.style.display = 'none';
-        el.onclick = null; // একবার ক্লিক করলে আর কাজ করবে না
+    function revealNSFW(el) {
+        el.classList.add('revealed');
     }
     </script>
     """
@@ -72,17 +72,31 @@ def safety_shield_generator(data, links, user_ads, owner_ads, share):
     # ২. অরিজিনাল HTML কোড নেওয়া
     html = __main__.shield_old_html(data, links, user_ads, owner_ads, share)
     
-    # ৩. যদি ১৮+ হয়, তবে ইমেজ ট্যাগগুলোতে ব্লার ক্লাস যোগ করা
+    # ৩. যদি ১৮+ হয়, তবে ইমেজগুলো ব্লার করা
     if is_adult:
         # মেইন পোস্টার ব্লার করা
-        poster_pattern = '<div class="info-poster">'
-        blur_poster = '<div class="info-poster"><div class="nsfw-container" onclick="revealImage(this)"><div class="nsfw-overlay">🔞 18+ Click to Reveal</div>'
-        html = html.replace(poster_pattern, blur_poster)
+        old_poster_tag = '<div class="info-poster">'
+        new_poster_tag = (
+            '<div class="info-poster">'
+            '<div class="nsfw-container" onclick="revealNSFW(this)">'
+            '<div class="nsfw-overlay"><b>🔞 18+ Content</b><br>Click to Reveal</div>'
+        )
+        html = html.replace(old_poster_tag, new_poster_tag)
+        # পোস্টার ইমেজে ক্লাস যোগ করা
         html = html.replace('alt="Poster">', 'alt="Poster" class="nsfw-blur"></div>')
         
-        # স্ক্রিনশটগুলো ব্লার করা
-        html = html.replace('<div class="screenshot-grid">', '<div class="screenshot-grid"><style>.screenshot-grid img { filter: blur(30px); cursor:pointer; }</style>')
-        html = html.replace('<img onclick="revealNSFW(this)"', '<img onclick="this.style.filter=\'none\'"')
+        # স্ক্রিনশটগুলো ব্লার করা (যদি স্ক্রিনশট গ্রিড থাকে)
+        html = html.replace(
+            '<div class="screenshot-grid">', 
+            '<div class="screenshot-grid"><style>.screenshot-item { position:relative; overflow:hidden; }</style>'
+        )
+        # প্রতিটি ইমেজের জন্য ব্লার ইফেক্ট
+        html = html.replace(
+            '<img src="', 
+            '<div class="nsfw-container" onclick="revealNSFW(this)"><div class="nsfw-overlay" style="font-size:10px;">🔞 Click</div><img class="nsfw-blur" src="'
+        )
+        # ডিভ ক্লোজ করা (এটি আপনার মেইন কোডের স্ট্রাকচারের ওপর নির্ভর করবে)
+        html = html.replace('class="screenshot-img">', 'class="screenshot-img"></div>')
 
     # ৪. সেফটি কোড এবং ডিসক্লেইমার যুক্ত করা
     safety_code = get_safety_shield_code(is_adult)
