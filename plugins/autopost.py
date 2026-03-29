@@ -1,41 +1,39 @@
+import __main__
 import asyncio
 import re
 import aiohttp
 import xml.etree.ElementTree as ET
-from pyrogram import Client, filters
+from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
 
-# ডাটাবাস কানেকশন
-MONGO_URL = os.getenv("mongodb+srv://Filetolink270:Filetolink270@cluster0.tsr3api.mongodb.net/?appName=Cluster0")
-mongo_client = AsyncIOMotorClient(MONGO_URL)
-db = mongo_client["movie_bot_db"]
+# মেইন ফাইল থেকে ডাটাবেস কালেকশন নেওয়া
+db = __main__.db
 user_setup_col = db["user_autopost_configs"]
 
-# এই ফাংশনটি মেইন ফাইল থেকে কল হবে
-async def register(bot: Client):
-    print("🔌 Autopost Plugin Registered!") # এটি টার্মিনালে দেখা যাবে
+# --- 🚀 AUTO-POST MONITOR PLUGIN ---
+async def register(bot):
+    print("🎬 Auto-Post Monitor Plugin Registered Successfully!")
 
-    # --- কমান্ড: /setup ---
-    @bot.on_message(filters.command("setup"))
-    async def setup_autopost(client, message):
-        print(f"📩 Setup command received from {message.from_user.id}") # লগ চেক
-        
+    # ১. সেটআপ কমান্ড হ্যান্ডলার
+    @bot.on_message(filters.command("setup") & filters.private)
+    async def setup_handler(client, message):
         try:
+            # ইউজার আইডি এবং মেসেজ স্প্লিট করা
+            uid = message.from_user.id
             parts = message.text.split(None, 3)
+            
             if len(parts) < 4:
                 return await message.reply_text(
-                    "❌ **ভুল ফরম্যাট!**\n\nসঠিক নিয়ম:\n"
-                    "`/setup @CineZoneBD1 https://yourblog.com/feeds/posts/default https://t.me/tutorial`"
+                    "❌ **ভুল ফরম্যাট!**\n\n"
+                    "**সঠিক নিয়ম:**\n"
+                    "`/setup @channel feed_url tutorial_url`"
                 )
             
             channel = parts[1]
             feed_url = parts[2]
             tutorial = parts[3]
-            uid = message.from_user.id
 
-            # ডাটাবেসে সেভ করা
+            # ডাটাবাসে সেভ করা
             await user_setup_col.update_one(
                 {"user_id": uid},
                 {"$set": {
@@ -48,94 +46,92 @@ async def register(bot: Client):
             )
             
             await message.reply_text(
-                f"✅ **সেটআপ সফল!**\n\n"
+                f"✅ **সেটআপ সম্পন্ন!**\n\n"
                 f"📢 চ্যানেল: `{channel}`\n"
                 f"🌐 ফিড: {feed_url}\n"
                 f"🎥 টিউটোরিয়াল: {tutorial}\n\n"
-                f"📌 *মনে রাখবেন:* বটকে অবশ্যই আপনার চ্যানেলে **Admin** বানাতে হবে।"
+                f"💡 এখন থেকে এই ব্লগে পোস্ট করলেই অটোমেটিক আপনার চ্যানেলে চলে যাবে।"
             )
-            
         except Exception as e:
-            print(f"❌ Setup Error: {e}")
-            await message.reply_text(f"❌ এরর হয়েছে: {e}")
+            await message.reply_text(f"❌ এরর: {e}")
 
-    # --- অটো মনিটর লুপ ---
-    async def monitor_all_feeds():
-        print("🚀 Autopost Monitor Task Started...")
+    # ২. অটো মনিটর লুপ (ব্যাকগ্রাউন্ডে চলবে)
+    async def monitor_feeds():
+        print("🔍 Feed Monitor Loop Started...")
         while True:
             try:
-                all_configs = await user_setup_col.find({}).to_list(None)
+                # ডাটাবাস থেকে সব ইউজারের কনফিগ নেওয়া
+                configs = await user_setup_col.find({}).to_list(None)
                 
                 async with aiohttp.ClientSession() as session:
-                    for config in all_configs:
+                    for config in configs:
                         try:
-                            uid = config.get("user_id")
-                            feed_url = config.get("feed")
-                            channel = config.get("channel")
+                            f_url = config.get("feed")
+                            l_id = config.get("last_post_id")
+                            target_chat = config.get("channel")
                             tutorial = config.get("tutorial")
-                            last_id = config.get("last_post_id")
+                            uid = config.get("user_id")
 
-                            async with session.get(feed_url, timeout=15) as resp:
-                                if resp.status != 200:
-                                    continue
+                            async with session.get(f_url, timeout=10) as resp:
+                                if resp.status != 200: continue
                                 
                                 xml_data = await resp.text()
                                 root = ET.fromstring(xml_data)
                                 ns = {'atom': 'http://www.w3.org/2005/Atom'}
                                 entries = root.findall('atom:entry', ns)
 
-                                if not entries:
-                                    continue
-
-                                latest_entry = entries[0]
-                                post_id = latest_entry.find('atom:id', ns).text
+                                if not entries: continue
                                 
-                                if post_id != last_id:
-                                    title = latest_entry.find('atom:title', ns).text
-                                    link = latest_entry.find('atom:link[@rel="alternate"]', ns).attrib['href']
-                                    content = latest_entry.find('atom:content', ns).text
-                                    
-                                    img_match = re.search(r'<img.*?src="(.*?)"', content)
-                                    poster_url = img_match.group(1) if img_match else None
-                                    
-                                    categories = [c.attrib['term'] for c in latest_entry.findall('atom:category', ns)]
-                                    genre_str = " | ".join(categories[:3]) if categories else "Movie/Series"
+                                latest = entries[0]
+                                p_id = latest.find('atom:id', ns).text
 
+                                # নতুন পোস্ট চেক
+                                if p_id != l_id:
+                                    title = latest.find('atom:title', ns).text
+                                    link = latest.find('atom:link[@rel="alternate"]', ns).attrib['href']
+                                    content = latest.find('atom:content', ns).text
+                                    
+                                    # পোস্টার ইমেজRegex
+                                    img_match = re.search(r'<img.*?src="(.*?)"', content)
+                                    poster = img_match.group(1) if img_match else None
+                                    
+                                    # ক্যাটাগরি/জনরা
+                                    cats = [c.attrib['term'] for c in latest.findall('atom:category', ns)]
+                                    genre = " | ".join(cats[:3]) if cats else "Movie"
+
+                                    # টেমপ্লেট ডিজাইন
                                     caption = (
-                                        f"🎬 **NEW MOVIE UPLOADED!**\n"
+                                        f"🎬 **NEW UPDATE: {title}**\n"
                                         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                                        f"📝 **Name:** {title}\n"
-                                        f"🎭 **Genre:** {genre_str}\n"
-                                        f"🗣️ **Audio:** Dual Audio\n"
-                                        f"🌟 **Quality:** 480p | 720p | 1080p\n\n"
+                                        f"🎭 **Genre:** {genre}\n"
+                                        f"🔊 **Language:** Dual Audio\n"
+                                        f"💎 **Quality:** 480p | 720p | 1080p\n\n"
                                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                                        f"📥 **Download From Website Below 👇**"
+                                        f"📥 **ডাউনলোড করতে নিচের লিংকে ক্লিক করুন**"
                                     )
 
-                                    btn = InlineKeyboardMarkup([
-                                        [InlineKeyboardButton("🔗 Watch & Download Now", url=link)],
-                                        [InlineKeyboardButton("📽️ How to Download (Video)", url=tutorial)]
+                                    btns = InlineKeyboardMarkup([
+                                        [InlineKeyboardButton("🔗 Watch / Download", url=link)],
+                                        [InlineKeyboardButton("📽️ How to Download", url=tutorial)]
                                     ])
 
+                                    # চ্যানেলে পাঠানো
                                     try:
-                                        if poster_url:
-                                            await bot.send_photo(channel, poster_url, caption=caption, reply_markup=btn)
+                                        if poster:
+                                            await bot.send_photo(target_chat, poster, caption=caption, reply_markup=btns)
                                         else:
-                                            await bot.send_message(channel, caption, reply_markup=btn)
+                                            await bot.send_message(target_chat, caption, reply_markup=btns)
                                         
-                                        await user_setup_col.update_one(
-                                            {"user_id": uid}, 
-                                            {"$set": {"last_post_id": post_id}}
-                                        )
-                                    except Exception as send_err:
-                                        print(f"⚠️ Send Error User {uid}: {send_err}")
-
-                        except Exception as user_err:
+                                        # আইডি আপডেট
+                                        await user_setup_col.update_one({"user_id": uid}, {"$set": {"last_post_id": p_id}})
+                                    except:
+                                        pass
+                        except:
                             continue
+            except:
+                pass
+            
+            await asyncio.sleep(10) # ৫ মিনিট পর পর চেক
 
-            except Exception as e:
-                print(f"⚠️ Global Monitor Error: {e}")
-
-            await asyncio.sleep(300) 
-
-    asyncio.create_task(monitor_all_feeds())
+    # লুপটি ব্যাকগ্রাউন্ডে স্টার্ট করা
+    asyncio.create_task(monitor_feeds())
