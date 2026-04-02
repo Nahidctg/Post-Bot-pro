@@ -48,7 +48,7 @@ def patched_generate_html(data, links, user_ad_links, owner_ad_links, admin_shar
     
     # আপনার অ্যাপের হোস্ট ইউআরএল (Render/Heroku/VPS)
     # এটি ডাইনামিকভাবে মেইন ফাইলের কনফিগ থেকেও নেওয়া সম্ভব
-    base_url = "https://your-app-url.com" # এখানে আপনার অরিজিনাল লিঙ্ক দিন
+    base_url = "https://gorgeous-donetta-nahidcrk-7b84dba9.koyeb.app" # এখানে আপনার অরিজিনাল লিঙ্ক দিন
 
     if is_adult:
         # ১৮+ হলে ডাটা থেকে স্ক্রিনশট রিমুভ করে দেওয়া হবে যাতে ব্লগারে সরাসরি না যায়
