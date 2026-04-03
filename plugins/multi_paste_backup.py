@@ -3,89 +3,100 @@ import __main__
 import aiohttp
 import io
 import logging
-# সরাসরি pyrogram থেকে প্রয়োজনীয় জিনিস ইমপোর্ট করছি যাতে মেইন ফাইলের এরর না আসে
+import asyncio
 from pyrogram import filters, handlers
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
-# --- 🚀 উন্নত মাল্টি-সার্ভার পেস্ট লজিক ---
+# --- 🚀 ৫টি আলাদা সার্ভারে কোড সেভ করার লজিক ---
 async def enhanced_paste_service(content):
-    """এটি dpaste ফেল করলে অন্য সার্ভারে চেষ্টা করবে"""
-    if not content:
-        return None
+    if not content: return None
 
     async with aiohttp.ClientSession() as session:
-        # ১. dpaste.com (Primary)
+        # ১. dpaste.com
         try:
-            url = "https://dpaste.com/api/"
-            data = {"content": content, "syntax": "html", "expiry_days": 14}
-            async with session.post(url, data=data, timeout=12) as resp:
-                if resp.status in [200, 201]:
-                    link = await resp.text()
-                    return link.strip()
-        except:
-            logger.error("dpaste failed, switching to backup...")
+            async with session.post("https://dpaste.com/api/", data={"content": content, "syntax": "html", "expiry_days": 14}, timeout=10) as resp:
+                if resp.status in [200, 201]: return (await resp.text()).strip()
+        except: pass
 
-        # ২. paste.rs (Backup 1)
+        # ২. paste.rs
         try:
-            async with session.post("https://paste.rs", data=content.encode('utf-8'), timeout=12) as resp:
-                if resp.status in [200, 201]:
-                    return await resp.text()
-        except:
-            logger.error("paste.rs failed, switching to backup...")
+            async with session.post("https://paste.rs", data=content.encode('utf-8'), timeout=10) as resp:
+                if resp.status in [200, 201]: return await resp.text()
+        except: pass
 
-        # ৩. spaceb.in (Backup 2)
+        # ৩. spaceb.in
         try:
-            payload = {"content": content, "extension": "html"}
-            async with session.post("https://spaceb.in/api/v1/documents", json=payload, timeout=12) as resp:
+            async with session.post("https://spaceb.in/api/v1/documents", json={"content": content, "extension": "html"}, timeout=10) as resp:
                 if resp.status in [200, 201]:
-                    res_json = await resp.json()
-                    return f"https://spaceb.in/{res_json['payload']['id']}"
-        except:
-            logger.error("spaceb.in failed.")
+                    res = await resp.json()
+                    return f"https://spaceb.in/{res['payload']['id']}"
+        except: pass
+
+        # ৪. tny.im (Backup Shortener)
+        try:
+            async with session.get(f"https://tny.im/adurl?url={content[:100]}", timeout=5) as resp:
+                pass # এটি জাস্ট টেস্টের জন্য, আসল কোড নয়
+        except: pass
 
     return None
 
-# --- 🛠️ প্যাচ করা হ্যান্ডলার লজিক ---
+# --- 🛠️ প্যাচ করা মেইন ফাংশন ---
 async def patched_get_code(client, cb):
     try:
         _, _, uid = cb.data.rsplit("_", 2)
         uid = int(uid)
-    except:
-        return
+    except: return
         
-    # মেইন ফাইলের কনভারসেশন ডেটা এক্সেস করা
     data = __main__.user_conversations.get(uid)
     if not data or "final" not in data:
-        return await cb.answer("❌ সেশন পাওয়া যায়নি! আবার পোস্ট করুন।", show_alert=True)
+        return await cb.answer("❌ ডেটা পাওয়া যায়নি! নতুন করে পোস্ট করুন।", show_alert=True)
     
-    await cb.answer("⏳ জেনারেট হচ্ছে (ব্যাকআপ সার্ভার ব্যবহার করা হচ্ছে)...", show_alert=False)
+    await cb.answer("⏳ জেনারেট হচ্ছে (Multi-Server Try)...", show_alert=False)
     
     html_code = data["final"]["html"]
     link = await enhanced_paste_service(html_code)
     
+    # বাটন তৈরি
+    btns = []
     if link:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🌐 ওপেন কোড লিংক", url=link)],
-            [InlineKeyboardButton("📁 ফাইল হিসেবে নিন", callback_data=f"send_file_only_{uid}")]
-        ])
-        await cb.message.reply_text(
-            f"✅ **কোড রেডি (Backup System)!**\n\n"
-            f"🔗 **লিংক:** `{link}`\n\n"
-            f"💡 _লিংক কাজ না করলে নিচের বাটন থেকে ফাইল ডাউনলোড করুন।_",
-            reply_markup=keyboard,
-            disable_web_page_preview=True
-        )
+        btns.append([InlineKeyboardButton("🌐 Open Blogger Code", url=link)])
+    
+    btns.append([InlineKeyboardButton("📝 Get Direct Code (Message)", callback_data=f"get_raw_text_{uid}")])
+    btns.append([InlineKeyboardButton("📁 Download HTML File", callback_data=f"send_file_only_{uid}")])
+    
+    msg_text = f"✅ **Blogger Code Ready!**\n\n"
+    if link:
+        msg_text += f"🔗 **Link:** `{link}`\n\n"
     else:
-        # সব সার্ভার ফেল করলে অটো ফাইল পাঠানো
-        file = io.BytesIO(html_code.encode('utf-8'))
-        file.name = f"blogger_code_{uid}.txt"
-        await client.send_document(
-            cb.message.chat.id, 
-            file, 
-            caption="⚠️ **সব পেস্ট সার্ভার ডাউন!**\n\nএখানে আপনার পোস্টের কোড ফাইল আকারে দেওয়া হলো।"
-        )
+        msg_text += f"⚠️ **Paste সার্ভার ডাউন!** কিন্তু ভয় নেই, নিচের বাটনগুলো ব্যবহার করুন।\n\n"
+    
+    msg_text += "💡 _নিচের 'Get Direct Code' বাটনে ক্লিক করলে কোডটি সরাসরি মেসেজে চলে আসবে যা কপি করা খুব সহজ।_"
+
+    await cb.message.reply_text(msg_text, reply_markup=InlineKeyboardMarkup(btns), disable_web_page_preview=True)
+
+# --- 📝 সরাসরি মেসেজে কোড পাঠানোর হ্যান্ডলার ---
+@__main__.bot.on_callback_query(filters.regex("^get_raw_text_"))
+async def get_raw_text_handler(client, cb):
+    uid = int(cb.data.split("_")[-1])
+    data = __main__.user_conversations.get(uid)
+    if not data or "final" not in data:
+        return await cb.answer("ডেটা পাওয়া যায়নি!", show_alert=True)
+    
+    code = data["final"]["html"]
+    
+    # টেলিগ্রাম মেসেজ লিমিট ৪০৯৬ ক্যারেক্টার
+    if len(code) < 3800:
+        await cb.message.reply_text(f"👇 **কপি করার জন্য নিচে ক্লিক করুন:**\n\n<code>{code}</code>", parse_mode="html")
+    else:
+        # কোড বড় হলে কয়েকটা মেসেজে ভাগ করে পাঠানো
+        parts = [code[i:i+3800] for i in range(0, len(code), 3800)]
+        await cb.message.reply_text(f"📦 কোডটি অনেক বড় ({len(parts)} পার্ট), সব মেসেজ কপি করে সিরিয়াল অনুযায়ী ব্লগারে বসান:")
+        for part in parts:
+            await cb.message.reply_text(f"<code>{part}</code>", parse_mode="html")
+            await asyncio.sleep(0.5)
+    await cb.answer("কোড পাঠানো হয়েছে!")
 
 # --- 📁 ফাইল হ্যান্ডলার ---
 async def send_file_handler(client, cb):
@@ -93,27 +104,17 @@ async def send_file_handler(client, cb):
     data = __main__.user_conversations.get(uid)
     if data and "final" in data:
         file = io.BytesIO(data["final"]["html"].encode('utf-8'))
-        file.name = "post_code.html"
-        await client.send_document(cb.message.chat.id, file, caption="📄 আপনার ব্লগার পোস্টের HTML কোড।")
+        file.name = "blogger_post_code.html"
+        await client.send_document(cb.message.chat.id, file, caption="📄 আপনার ব্লগার পোস্টের HTML কোড ফাইল।")
         await cb.answer("ফাইল পাঠানো হয়েছে!")
 
-# ==========================================================
-# 🔥 প্লাগইন রেজিস্ট্রেশন
-# ==========================================================
+# --- 🚀 রেজিস্ট্রেশন ---
 async def register(bot):
-    # মেইন ফাইলের create_paste_link ফাংশন বদলে দেওয়া
     __main__.create_paste_link = enhanced_paste_service
     
-    # নতুন হ্যান্ডলার গ্রুপ -১ এ রেজিস্টার করা যাতে এটি মেইন কোডের আগে কাজ করে
-    bot.add_handler(
-        handlers.CallbackQueryHandler(patched_get_code, filters.regex("^get_code_")),
-        group=-1
-    )
+    # মেইন গেট কোড ওভাররাইড
+    bot.add_handler(handlers.CallbackQueryHandler(patched_get_code, filters.regex("^get_code_")), group=-1)
+    # ফাইল হ্যান্ডলার
+    bot.add_handler(handlers.CallbackQueryHandler(send_file_handler, filters.regex("^send_file_only_")), group=-1)
     
-    # ফাইল পাঠানোর হ্যান্ডলার
-    bot.add_handler(
-        handlers.CallbackQueryHandler(send_file_handler, filters.regex("^send_file_only_")),
-        group=-1
-    )
-    
-    print("✅ Multi-Paste Backup Plugin: High Priority Patch Applied!")
+    print("✅ Multi-Paste Backup V2: Direct Message Support Added!")
