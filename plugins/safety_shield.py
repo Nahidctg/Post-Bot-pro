@@ -8,13 +8,13 @@ import logging
 # --- ১. কনফিগারেশন ---
 logger = logging.getLogger(__name__)
 
-# আপনার দেওয়া ImgBB API Key সরাসরি এখানে সেট করা হলো
+# আপনার দেওয়া ImgBB API Key
 IMGBB_API_KEY = "1821270072482fb07921cfd72d31c37e"
 
 ADULT_KEYWORDS = ["erotic", "porn", "sexy", "nudity", "adult", "18+", "nsfw", "hot scenes"]
 SAFE_PLACEHOLDER = "https://i.ibb.co/9TRmN8V/nsfw-placeholder.png"
 
-# --- ২. ইমেজ আপলোড সিস্টেম ওভাররাইড (ImgBB নিশ্চিত করা) ---
+# --- ২. ইমেজ আপলোড সিস্টেম ওভাররাইড ---
 def improved_upload_core(file_content):
     """সব ইমেজ ImgBB-তে আপলোড করার মেইন ইঞ্জিন"""
     try:
@@ -28,7 +28,6 @@ def improved_upload_core(file_content):
         logger.error(f"ImgBB Upload Error: {e}")
     return None
 
-# মেইন বটের পুরনো ফাংশনগুলোকে হাইজ্যাক করা
 def patched_upload_to_catbox(file_path):
     with open(file_path, "rb") as f:
         return improved_upload_core(f.read())
@@ -59,12 +58,11 @@ def is_content_adult(data):
     overview = (data.get("overview") or "").lower()
     return any(word in title or word in overview for word in ADULT_KEYWORDS)
 
-# --- ৪. প্রিমিয়াম স্ক্রিপ্ট ও ডিজাইন ইনজেক্টর ---
+# --- ৪. প্রিমিয়াম স্ক্রিপ্ট ও ডিজাইন ইনজেক্টর (ফিক্সড ব্লার ইস্যু) ---
 def get_advanced_scripts(is_adult, data):
     title = data.get("title") or data.get("name") or "Movie"
     poster = data.get("manual_poster_url") or SAFE_PLACEHOLDER
     
-    # SEO Schema Markup
     schema = f"""
     <script type="application/ld+json">
     {{
@@ -82,7 +80,6 @@ def get_advanced_scripts(is_adult, data):
     </script>
     """
 
-    # OneSignal + AdBlock + Unlock Timer Scripts
     scripts = f"""
     {schema}
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -101,42 +98,37 @@ def get_advanced_scripts(is_adult, data):
       }}
       window.onload = function() {{ detectAdBlock(); }};
 
-      function startUnlock(btn, type) {{
-        let randomAd = AD_LINKS[Math.floor(Math.random() * AD_LINKS.length)];
-        window.open(randomAd, '_blank'); 
-        btn.disabled = true;
-        btn.style.position = 'relative';
-        btn.innerHTML = '⏳ SECURING LINK... <div id="unlock-timer"></div>';
-        let timeLeft = 5;
-        let timer = setInterval(function() {{
-            if (timeLeft < 0) {{
-                clearInterval(timer);
-                document.getElementById('view-details').style.display = 'none';
-                document.getElementById('view-links').style.display = 'block';
-                window.scrollTo({{top: 0, behavior: 'smooth'}});
-            }}
-            timeLeft--;
-        }}, 1000);
-        setTimeout(() => {{ document.getElementById('unlock-timer').style.width = '100%'; }}, 100);
-      }}
-
       function revealNSFW(el) {{
         const imgs = el.querySelectorAll('img');
         imgs.forEach(img => {{
             const raw = img.getAttribute('data-raw');
-            if (raw) {{ img.src = atob(raw); img.removeAttribute('data-raw'); img.style.filter = 'none'; }}
+            if (raw) {{ 
+                img.src = atob(raw); 
+                img.removeAttribute('data-raw'); 
+                // ইনলাইন স্টাইল ও ফিল্টার পুরোপুরি রিমুভ করা
+                img.style.filter = "none";
+                img.style.opacity = "1";
+            }}
         }});
-        el.querySelector('.nsfw-overlay')?.remove();
+        const overlay = el.querySelector('.nsfw-overlay');
+        if(overlay) overlay.remove();
+        el.classList.remove('nsfw-masked');
         el.classList.add('nsfw-unmasked');
         el.onclick = null;
       }}
     </script>
     <style>
         #unlock-timer {{ position: absolute; bottom: 0; left: 0; height: 4px; background: #ff5252; width: 0%; transition: width 5s linear; box-shadow: 0 0 10px #ff5252; }}
+        
+        /* ব্লার স্টাইল */
         .nsfw-masked {{ position: relative; cursor: pointer; overflow: hidden; background: #000; border-radius: 10px; }}
-        .nsfw-masked img {{ filter: blur(60px); opacity: 0.4; transition: 0.5s; }}
-        .nsfw-overlay {{ position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); color: #fff; font-weight: bold; z-index: 5; }}
-        .nsfw-btn-ui {{ background: #ff4d4d; padding: 8px 15px; border-radius: 5px; font-size: 12px; }}
+        .nsfw-masked img {{ filter: blur(60px) !important; opacity: 0.3 !important; transition: 0.5s; }}
+        
+        /* রিভিল স্টাইল */
+        .nsfw-unmasked img {{ filter: blur(0px) !important; opacity: 1 !important; }}
+        
+        .nsfw-overlay {{ position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: #fff; font-weight: bold; z-index: 99; }}
+        .nsfw-btn-ui {{ background: #ff4d4d; padding: 10px 20px; border-radius: 30px; font-size: 13px; text-transform: uppercase; box-shadow: 0 4px 15px rgba(255,77,77,0.4); }}
     </style>
     """
     return scripts
@@ -149,33 +141,34 @@ def safety_shield_generator(data, links, user_ads, owner_ads, share):
     is_adult = is_content_adult(data)
     is_bot = is_google_bot()
     
-    # যদি গুগল বট আসে, তবে লিঙ্ক এবং অ্যাডাল্ট কন্টেন্ট হাইড করা
     if is_adult and is_bot:
         data['overview'] = "Content restricted for safety."
         links = []
 
-    # মেইন HTML জেনারেট করা
     html = __main__.shield_old_html(data, links, user_ads, owner_ads, share)
     
-    # অ্যাডাল্ট কন্টেন্টের ক্ষেত্রে ইমেজ মাস্কিং
     if is_adult:
         def secure_img_tags(match):
             img_src = match.group(1)
-            if any(x in img_src.lower() for x in ["logo", "telegram", "icon", "banner"]): 
+            # লোগো বা আইকনগুলো বাদ দিয়ে শুধু পোস্টার ও স্ক্রিনশট ব্লার করা
+            if any(x in img_src.lower() for x in ["logo", "telegram", "icon", "banner", "favicon"]): 
                 return match.group(0)
             
             if is_bot: return 'src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"'
             
-            # ইমেজ লিঙ্ক এনকোড করে হাইড করা
             encoded_url = base64.b64encode(img_src.encode()).decode()
-            return f'src="{SAFE_PLACEHOLDER}" data-raw="{encoded_url}" style="filter:blur(50px);"'
+            return f'src="{SAFE_PLACEHOLDER}" data-raw="{encoded_url}" style="filter:blur(50px); opacity:0.3;"'
 
         html = re.sub(r'src="([^"]+)"', secure_img_tags, html)
         
-        # UI সেকশনে মাস্কিং অ্যাপ্লাই
-        overlay = '<div class="nsfw-overlay"><div class="nsfw-btn-ui">🔞 Click to Reveal</div></div>'
+        overlay = '<div class="nsfw-overlay"><div class="nsfw-btn-ui">🔞 Click to Reveal Content</div></div>'
+        
+        # কন্টেইনারে মাস্কিং ক্লাস বসানো
         if '<div class="info-poster">' in html:
             html = html.replace('<div class="info-poster">', f'<div class="info-poster nsfw-masked" onclick="revealNSFW(this)">{overlay}')
+        elif '<div class="poster">' in html:
+            html = html.replace('<div class="poster">', f'<div class="poster nsfw-masked" onclick="revealNSFW(this)">{overlay}')
+            
         if '<div class="screenshot-grid">' in html:
             html = html.replace('<div class="screenshot-grid">', f'<div class="screenshot-grid nsfw-masked" onclick="revealNSFW(this)">{overlay}')
 
@@ -184,4 +177,4 @@ def safety_shield_generator(data, links, user_ads, owner_ads, share):
 __main__.generate_html_code = safety_shield_generator
 
 async def register(bot):
-    print("🚀 Ultimate Safety Shield & ImgBB Engine Activated!")
+    print("🚀 Ultimate Safety Shield & ImgBB Engine Activated & Fixed!")
