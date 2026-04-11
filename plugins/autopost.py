@@ -2,6 +2,7 @@ import __main__
 import asyncio
 import re
 import aiohttp
+from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -30,11 +31,10 @@ def extract_info_from_blog(content):
     return info
 
 async def register(bot):
-    print("🎬 Professional Multi-Autopost: Blog Scraper UI Activated!")
+    print("🎬 Smart Multi-Autopost: Link Detector Activated!")
 
     @bot.on_message(filters.command("myconfig") & filters.private, group=-1)
     async def check_config(client, message):
-        # ইউজারের সবকয়টি সেটআপ খোঁজা হচ্ছে
         configs = await user_setup_col.find({"user_id": message.from_user.id}).to_list(None)
         if configs:
             msg_text = "⚙️ **Your Active Configurations:**\n\n"
@@ -55,45 +55,99 @@ async def register(bot):
                 return await message.reply_text("⚠️ **Format:** `/setup @channel feed_url tutorial_url`")
             
             channel, feed, tutorial = parts[1], parts[2], parts[3]
-            
-            # এখানে user_id এবং channel দুইটাই চেক করা হচ্ছে, যাতে এক ইউজার আলাদা চ্যানেলে আলাদা সাইট দিতে পারে
             await user_setup_col.update_one(
                 {"user_id": message.from_user.id, "channel": channel}, 
                 {"$set": {"feed": feed, "tutorial": tutorial, "last_post_id": None}},
                 upsert=True
             )
-            await message.reply_text(f"✅ **Setup Successful for {channel}!**\nBot will monitor this feed for this channel.")
+            await message.reply_text(f"✅ **Setup Successful for {channel}!**")
         except Exception as e:
             await message.reply_text(f"❌ Error: {e}")
 
-    @bot.on_message(filters.command("delsetup") & filters.private, group=-1)
-    async def delete_setup(client, message):
+    # --- স্মার্ট রিপোস্ট কমান্ড (লিংক ডিটেক্টর সহ) ---
+    @bot.on_message(filters.command("repost") & filters.private)
+    async def smart_repost(client, message):
         try:
             parts = message.text.split()
             if len(parts) < 2:
-                return await message.reply_text("⚠️ **Format:** `/delsetup @channel_username`")
+                return await message.reply_text("⚠️ **Format:** `/repost https://yourbloglink.com/...`")
             
-            channel = parts[1]
-            res = await user_setup_col.delete_one({"user_id": message.from_user.id, "channel": channel})
+            input_link = parts[1].strip()
+            # ইনপুট লিংকের ডোমেইন বের করা (যেমন: movies.com)
+            domain = urlparse(input_link).netloc
+            if not domain:
+                return await message.reply_text("❌ Invalid URL!")
+
+            # ডাটাবেসে এই ডোমেইন বা ফিড মিল আছে এমন সব কনফিগ খোঁজা
+            configs = await user_setup_col.find({"user_id": message.from_user.id}).to_list(None)
             
-            if res.deleted_count > 0:
-                await message.reply_text(f"✅ Setup removed for {channel}")
-            else:
-                await message.reply_text("❌ No such setup found for this channel.")
+            target_configs = []
+            for cfg in configs:
+                if domain in cfg.get("feed"):
+                    target_configs.append(cfg)
+
+            if not target_configs:
+                return await message.reply_text(f"❌ ডোমেইন `{domain}` এর জন্য কোনো চ্যানেল সেটআপ পাওয়া যায়নি। প্রথমে `/setup` করুন।")
+
+            status_msg = await message.reply_text("🔍 Matching site found! Scraping info...")
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(input_link, timeout=15) as resp:
+                    if resp.status != 200:
+                        return await status_msg.edit("❌ লিঙ্কটি রিচ করা যাচ্ছে না।")
+                    
+                    html = await resp.text()
+                    title_match = re.search(r'<title>(.*?)</title>', html, re.I | re.S)
+                    full_title = title_match.group(1).split('|')[0].split('-')[0].strip() if title_match else "Movie Update"
+                    
+                    blog_info = extract_info_from_blog(html)
+                    img_match = re.search(r'<img.*?src="(.*?)"', html)
+                    poster = img_match.group(1) if img_match else None
+                    
+                    caption = (
+                        f"┏━━━━━━━━━━━━━━━━━━━━┓\n"
+                        f"🎬 **NEW UPDATE: {full_title}**\n"
+                        f"┗━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                        f"⭐️ **Rating:** {blog_info['rating']}\n"
+                        f"🎭 **Genres:** {blog_info['genres']}\n"
+                        f"📅 **Year:** {blog_info['year']}\n"
+                        f"⏱ **Runtime:** {blog_info['runtime']}\n"
+                        f"🗣 **Language:** {blog_info['lang']}\n"
+                        f"💎 **Quality:** 480p | 720p | 1080p\n\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📥 **ডাউনলোড করতে নিচের লিংকে ক্লিক করুন 👇**"
+                    )
+
+                    # ম্যাচ করা সব চ্যানেলে পোস্ট করা
+                    for cfg in target_configs:
+                        target_chat = cfg.get("channel")
+                        tutorial = cfg.get("tutorial")
+
+                        btns = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔗 Watch & Download Now", url=input_link)],
+                            [InlineKeyboardButton("📽️ How to Download (Video)", url=tutorial)]
+                        ])
+
+                        try:
+                            if poster: await bot.send_photo(target_chat, poster, caption=caption, reply_markup=btns)
+                            else: await bot.send_message(target_chat, caption, reply_markup=btns)
+                        except Exception as e:
+                            print(f"Error sending to {target_chat}: {e}")
+
+                    await status_msg.edit(f"✅ Successfully Reposted to **{len(target_configs)}** channel(s) matching `{domain}`")
+
         except Exception as e:
-            await message.reply_text(f"❌ Error: {e}")
+            await message.reply_text(f"❌ Error: {str(e)}")
 
     async def monitor_feeds():
         while True:
             try:
-                # সব ইউজারের সব কনফিগ দেখা হচ্ছে
                 configs = await user_setup_col.find({}).to_list(None)
                 async with aiohttp.ClientSession() as session:
                     for config in configs:
                         try:
                             f_url, l_id = config.get("feed"), config.get("last_post_id")
                             target_chat, tutorial = config.get("channel"), config.get("tutorial")
-                            # ডাটাবেস আপডেট করার জন্য ইউনিক আইডি হিসেবে _id ব্যবহার করবো
                             doc_id = config.get("_id")
 
                             async with session.get(f_url, timeout=15) as resp:
@@ -138,8 +192,6 @@ async def register(bot):
                                     try:
                                         if poster: await bot.send_photo(target_chat, poster, caption=caption, reply_markup=btns)
                                         else: await bot.send_message(target_chat, caption, reply_markup=btns)
-                                        
-                                        # শুধু ওই নির্দিষ্ট কনফিগের জন্য লাস্ট পোস্ট আইডি আপডেট
                                         await user_setup_col.update_one({"_id": doc_id}, {"$set": {"last_post_id": p_id}})
                                     except Exception as e:
                                         print(f"Error sending to {target_chat}: {e}")
@@ -147,6 +199,6 @@ async def register(bot):
                             continue
             except Exception:
                 pass
-            await asyncio.sleep(30) # একটু সময় বাড়িয়ে ৩০ সেকেন্ড করা হলো সার্ভার লোড কমাতে
+            await asyncio.sleep(30)
 
     asyncio.create_task(monitor_feeds())
