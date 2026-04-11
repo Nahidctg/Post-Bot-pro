@@ -14,37 +14,37 @@ user_setup_col = db["user_autopost_configs"]
 # --- হেল্পার ফাংশনস ---
 
 def is_valid_url(url):
+    """লিঙ্কটি সঠিক কি না তা যাচাই করে"""
     if not url or not isinstance(url, str):
         return False
     parsed = urlparse(url)
     return all([parsed.scheme, parsed.netloc])
 
-def get_clean_domain(url):
-    """লিঙ্ক থেকে ডোমেইন বের করে www. রিমুভ করে দেয়"""
-    try:
-        netloc = urlparse(url).netloc.lower()
-        return netloc.replace("www.", "")
-    except:
-        return ""
-
 def extract_info_from_blog(content):
+    """ব্লগ কন্টেন্ট থেকে মুভির তথ্য (Rating, Genre, Year, etc.) বের করে"""
     if not content:
         return {'rating': 'N/A', 'genres': 'Movie', 'lang': 'Dual Audio', 'runtime': 'N/A', 'year': 'N/A'}
+    
+    # HTML ট্যাগ রিমুভ করা
     text = re.sub(r'<[^>]+>', ' ', content)
+    
     info = {}
     rating = re.search(r'RATING:\s*([\d\./]+)', text, re.I)
     genre = re.search(r'GENRE:\s*([^📅🗣⏱]+)', text, re.I)
     lang = re.search(r'LANGUAGE:\s*([^📅🎭⏱]+)', text, re.I)
     runtime = re.search(r'RUNTIME:\s*([\d\s\w]+)', text, re.I)
     year = re.search(r'RELEASE:\s*(\d{4})', text, re.I)
+
     info['rating'] = rating.group(1).strip() if rating else "N/A"
     info['genres'] = genre.group(1).strip() if genre else "Movie"
     info['lang'] = lang.group(1).strip() if lang else "Dual Audio"
     info['runtime'] = runtime.group(1).strip() if runtime else "N/A"
     info['year'] = year.group(1).strip() if year else "N/A"
+    
     return info
 
 def get_caption(title, info):
+    """প্রফেশনাল বক্স লেআউট ক্যাপশন তৈরি করে"""
     return (
         f"┏━━━━━━━━━━━━━━━━━━━━┓\n"
         f"🎬 **NEW UPDATE: {title}**\n"
@@ -62,50 +62,41 @@ def get_caption(title, info):
 # --- মূল প্লাগইন রেজিস্টার ---
 
 async def register(bot):
-    print("🎬 Smart Repost V2 (Domain Fix) Activated!")
+    print("🎬 Professional Autopost System (v5.0 Final) Activated!")
 
+    # --- ১. স্মার্ট রিপোস্ট কমান্ড ---
     @bot.on_message(filters.command("repost") & filters.private, group=-1)
     async def smart_repost(client, message):
         try:
             parts = message.text.split()
             if len(parts) < 2:
-                return await message.reply_text("⚠️ **Format:** `/repost লিঙ্ক`")
+                return await message.reply_text("⚠️ **ব্যবহার নিয়ম:** `/repost https://yourblog.com/post-url`")
             
             input_link = parts[1].strip()
             if not is_valid_url(input_link):
-                return await message.reply_text("❌ ভুল লিঙ্ক! `https://` সহ দিন।")
+                return await message.reply_text("❌ সঠিক লিঙ্ক দিন (https:// থাকতে হবে)।")
 
-            status_msg = await message.reply_text("🔎 ম্যাচিং চ্যানেল খোঁজা হচ্ছে...")
+            status_msg = await message.reply_text("🔍 ডাটাবেস চেক করা হচ্ছে...")
+            domain = urlparse(input_link).netloc
             
-            # ইনপুট লিঙ্কের ডোমেইন
-            input_domain = get_clean_domain(input_link)
-            
-            # ডাটাবেস থেকে ইউজারের সব কনফিগ আনা
+            # ইউজারের সেটআপ খোঁজা
             configs = await user_setup_col.find({"user_id": message.from_user.id}).to_list(None)
-            
-            target_configs = []
-            for cfg in configs:
-                # সেভ করা ফিড লিঙ্কের ডোমেইন
-                feed_domain = get_clean_domain(cfg.get("feed", ""))
-                # যদি ডোমেইন মিলে যায়
-                if input_domain == feed_domain or input_domain in cfg.get("feed", ""):
-                    target_configs.append(cfg)
+            target_configs = [cfg for cfg in configs if domain in cfg.get("feed", "")]
 
             if not target_configs:
-                # কোনো ম্যাচ না পাওয়া গেলে ইউজারকে তার সেভ করা ডোমেইনগুলো দেখাবে (ডিবাগ করার জন্য)
-                saved_domains = [get_clean_domain(c.get("feed", "")) for c in configs]
-                error_txt = f"❌ কোনো ম্যাচিং চ্যানেল পাওয়া যায়নি!\n\nআপনার ইনপুট ডোমেইন: `{input_domain}`\nআপনার সেভ করা ডোমেইনগুলো: `{saved_domains}`\n\nদয়া করে `/setup` করার সময় ডোমেইন ঠিকভাবে দিন।"
-                return await status_msg.edit(error_txt)
+                return await status_msg.edit(f"❌ ডোমেইন `{domain}` এর জন্য কোনো চ্যানেল পাওয়া যায়নি। আগে `/setup` করুন।")
 
-            await status_msg.edit(f"✅ ডোমেইন ম্যাচ করেছে!\n🌐 `{input_domain}` থেকে তথ্য সংগ্রহ করা হচ্ছে...")
+            await status_msg.edit("🌐 ওয়েবসাইট থেকে মুভি ডিটেইলস স্ক্র্যাপ করা হচ্ছে...")
             
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(input_link, timeout=20) as resp:
                     if resp.status != 200:
-                        return await status_msg.edit(f"❌ এরর: ওয়েবসাইট থেকে রেসপন্স নেই ({resp.status})")
+                        return await status_msg.edit(f"❌ এরর: ওয়েবসাইট থেকে রেসপন্স পাওয়া যায়নি ({resp.status})")
                     
                     html = await resp.text()
+                    
+                    # টাইটেল ও পোস্টার স্ক্র্যাপ করা
                     title_match = re.search(r'<title>(.*?)</title>', html, re.I | re.S)
                     title = title_match.group(1).split('|')[0].split('-')[0].strip() if title_match else "Movie Update"
                     info = extract_info_from_blog(html)
@@ -113,11 +104,12 @@ async def register(bot):
                     poster = img_match.group(1) if img_match else None
                     
                     caption = get_caption(title, info)
-                    success_count = 0
                     
+                    success_count = 0
                     for cfg in target_configs:
                         target_chat = cfg.get("channel")
                         tutorial = cfg.get("tutorial")
+
                         btns = [[InlineKeyboardButton("🔗 Watch & Download Now", url=input_link)]]
                         if is_valid_url(tutorial):
                             btns.append([InlineKeyboardButton("📽️ How to Download", url=tutorial)])
@@ -130,44 +122,59 @@ async def register(bot):
                             print(f"Error sending to {target_chat}: {e}")
 
                     await status_msg.edit(f"✅ সফলভাবে **{success_count}** টি চ্যানেলে রিপোস্ট করা হয়েছে!")
-
         except Exception as e:
             await message.reply_text(f"❌ এরর: {str(e)}")
 
-    # --- অন্য কমান্ডগুলো আগের মতোই থাকবে (setup, delsetup, myconfig, monitor_feeds) ---
-
+    # --- ২. চ্যানেল সেটআপ কমান্ড ---
     @bot.on_message(filters.command("setup") & filters.private, group=-1)
     async def setup_handler(client, message):
         try:
             parts = message.text.split(None, 3)
-            if len(parts) < 4: return await message.reply_text("⚠️ `/setup @channel feed tutorial`")
+            if len(parts) < 4:
+                return await message.reply_text("⚠️ **নিয়ম:** `/setup @channel feed_url tutorial_url`")
+            
             channel, feed, tutorial = parts[1], parts[2], parts[3]
+            if not is_valid_url(feed) or not is_valid_url(tutorial):
+                return await message.reply_text("❌ লিঙ্কগুলো ভুল! অবশ্যই `https://` সহ দিন।")
+
             await user_setup_col.update_one(
                 {"user_id": message.from_user.id, "channel": channel}, 
                 {"$set": {"feed": feed, "tutorial": tutorial, "last_post_id": None}},
                 upsert=True
             )
-            await message.reply_text(f"✅ Setup Successful for {channel}")
-        except Exception as e: await message.reply_text(f"❌ Error: {e}")
+            await message.reply_text(f"✅ **সেটআপ সফল!**\nচ্যানেল: {channel}\nএখন থেকে এই ফিডটি মনিটর করা হবে।")
+        except Exception as e:
+            await message.reply_text(f"❌ এরর: {e}")
 
+    # --- ৩. কনফিগ চেক কমান্ড ---
     @bot.on_message(filters.command("myconfig") & filters.private, group=-1)
     async def config_handler(client, message):
         configs = await user_setup_col.find({"user_id": message.from_user.id}).to_list(None)
-        if not configs: return await message.reply_text("❌ No config found.")
-        txt = "⚙️ **Your Active Configs:**\n\n"
+        if not configs:
+            return await message.reply_text("❌ আপনার কোনো একটিভ সেটআপ পাওয়া যায়নি।")
+        
+        txt = "⚙️ **আপনার একটিভ কনফিগসমূহ:**\n\n"
         for i, cfg in enumerate(configs, 1):
             txt += f"{i}. 📢 `{cfg['channel']}`\n🌐 {cfg['feed']}\n\n"
         await message.reply_text(txt, disable_web_page_preview=True)
 
+    # --- ৪. সেটআপ ডিলিট কমান্ড ---
     @bot.on_message(filters.command("delsetup") & filters.private, group=-1)
-    async def del_handler(client, message):
+    async def delete_setup(client, message):
         try:
             parts = message.text.split()
-            if len(parts) < 2: return await message.reply_text("⚠️ `/delsetup @channel`")
+            if len(parts) < 2:
+                return await message.reply_text("⚠️ **নিয়ম:** `/delsetup @channel`")
+            
             res = await user_setup_col.delete_one({"user_id": message.from_user.id, "channel": parts[1]})
-            await message.reply_text("✅ Deleted" if res.deleted_count > 0 else "❌ Not found")
-        except Exception as e: await message.reply_text(f"❌ Error: {e}")
+            if res.deleted_count > 0:
+                await message.reply_text(f"✅ `{parts[1]}` এর সেটআপ মুছে ফেলা হয়েছে।")
+            else:
+                await message.reply_text("❌ এই নামে কোনো সেটআপ পাওয়া যায়নি।")
+        except Exception as e:
+            await message.reply_text(f"❌ এরর: {e}")
 
+    # --- ৫. অটো পোস্ট মনিটর (ব্যাকগ্রাউন্ড টাস্ক) ---
     async def monitor_feeds():
         while True:
             try:
@@ -176,8 +183,12 @@ async def register(bot):
                 async with aiohttp.ClientSession(headers=headers) as session:
                     for config in configs:
                         try:
-                            f_url, l_id = config.get("feed"), config.get("last_post_id")
-                            target_chat, tutorial = config.get("channel"), config.get("tutorial")
+                            f_url = config.get("feed")
+                            l_id = config.get("last_post_id")
+                            target_chat = config.get("channel")
+                            tutorial = config.get("tutorial")
+                            doc_id = config.get("_id")
+
                             async with session.get(f_url, timeout=15) as resp:
                                 if resp.status != 200: continue
                                 xml_data = await resp.text()
@@ -185,25 +196,34 @@ async def register(bot):
                                 ns = {'atom': 'http://www.w3.org/2005/Atom'}
                                 entries = root.findall('atom:entry', ns)
                                 if not entries: continue
+                                
                                 latest = entries[0]
                                 p_id = latest.find('atom:id', ns).text
                                 if p_id != l_id:
                                     title = latest.find('atom:title', ns).text
                                     link = latest.find('atom:link[@rel="alternate"]', ns).attrib['href']
                                     content = latest.find('atom:content', ns).text or ""
+                                    
                                     info = extract_info_from_blog(content)
                                     img_match = re.search(r'<img.*?src="(.*?)"', content)
                                     poster = img_match.group(1) if img_match else None
+                                    
                                     caption = get_caption(title, info)
+                                    
                                     btns = [[InlineKeyboardButton("🔗 Watch & Download Now", url=link)]]
-                                    if is_valid_url(tutorial): btns.append([InlineKeyboardButton("📽️ How to Download", url=tutorial)])
+                                    if is_valid_url(tutorial):
+                                        btns.append([InlineKeyboardButton("📽️ How to Download", url=tutorial)])
+
                                     try:
                                         if poster: await bot.send_photo(target_chat, poster, caption=caption, reply_markup=InlineKeyboardMarkup(btns))
                                         else: await bot.send_message(target_chat, caption, reply_markup=InlineKeyboardMarkup(btns))
-                                        await user_setup_col.update_one({"_id": config["_id"]}, {"$set": {"last_post_id": p_id}})
-                                    except: pass
+                                        
+                                        # আইডি আপডেট করা যাতে রিপোস্ট না হয়
+                                        await user_setup_col.update_one({"_id": doc_id}, {"$set": {"last_post_id": p_id}})
+                                    except Exception as e:
+                                        print(f"Auto-post Error to {target_chat}: {e}")
                         except: continue
             except: pass
-            await asyncio.sleep(45)
+            await asyncio.sleep(45) # ৪৫ সেকেন্ড পরপর চেক করবে
 
     asyncio.create_task(monitor_feeds())
