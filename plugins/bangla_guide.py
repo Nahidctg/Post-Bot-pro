@@ -1,7 +1,7 @@
 # plugins/bangla_guide.py
 import __main__
 
-# --- 🎨 BANGLA GUIDE UI (কালারফুল বক্স ডিজাইন) ---
+# --- 🎨 BANGLA GUIDE UI (আপনার অরিজিনাল ডিজাইন + ভয়েস স্ক্রিপ্ট) ---
 def get_bangla_guide_ui():
     return """
     <style>
@@ -50,7 +50,6 @@ def get_bangla_guide_ui():
         .step-text { font-size: 14px; line-height: 1.5; color: #ddd; }
         .step-text b { color: #ffeb3b; }
         
-        /* এনিমেশন */
         .guide-container { animation: borderPulse 2s infinite; }
         @keyframes borderPulse {
             0% { border-color: #E50914; }
@@ -88,6 +87,34 @@ def get_bangla_guide_ui():
             ⚠️ যদি কোনো লিংক কাজ না করে, তবে টেলিগ্রাম গ্রুপে রিপোর্ট করুন।
         </div>
     </div>
+
+    <!-- 🔥 ভয়েস গাইড স্ক্রিপ্ট (কোনো দৃশ্যমান পরিবর্তন ছাড়াই কাজ করবে) -->
+    <script>
+    var voiceHasPlayed = false;
+
+    function playBanglaVoice() {
+        if (voiceHasPlayed) return;
+        
+        if ('speechSynthesis' in window) {
+            const text = "মুভিটি দেখতে বা ডাউনলোড করতে নিচের লাল অথবা সবুজ বাটনে ক্লিক করুন। যদি কোনো বিজ্ঞাপন ওপেন হয়, তবে আপনার ফোনের ব্যাক বাটন চেপে এই পেজেই ফিরে আসুন। ৫ সেকেন্ড অপেক্ষা করার পর মুভি প্লেয়ার এবং সার্ভার লিস্ট অটোমেটিক খুলে যাবে। ধন্যবাদ।";
+            
+            const msg = new SpeechSynthesisUtterance();
+            msg.text = text;
+            msg.lang = 'bn-BD';
+            msg.rate = 0.9; 
+
+            // ভয়েস লোড করা
+            window.speechSynthesis.cancel(); 
+            window.speechSynthesis.speak(msg);
+            voiceHasPlayed = true;
+        }
+    }
+
+    // ইউজার পেজে স্ক্রল করলে বা টাচ করলেই ভয়েস শুরু হবে
+    window.addEventListener('scroll', playBanglaVoice, { once: true });
+    window.addEventListener('touchstart', playBanglaVoice, { once: true });
+    window.addEventListener('click', playBanglaVoice, { once: true });
+    </script>
     """
 
 # ==========================================================
@@ -97,32 +124,25 @@ def get_bangla_guide_ui():
 original_html_code_func = __main__.generate_html_code
 
 def bangla_guide_injector(data, links, user_ads, owner_ads, share):
-    # অরিজিনাল কোডটি নেওয়া (এতে আপনার থাম্বনেইল ফিক্স এবং প্রিমিয়াম ডিজাইনও থাকবে)
     html = original_html_code_func(data, links, user_ads, owner_ads, share)
-    
-    # নতুন বাংলা গাইড বক্স তৈরি করা
     bangla_guide = get_bangla_guide_ui()
     
-    # পুরনো ইংরেজি ইনস্ট্রাকশন টেক্সটটি খুঁজে বের করা এবং সেটি সরিয়ে নতুন বাংলা বক্সটি বসানো
     old_instruction_start = '<div style="background: rgba(0,0,0,0.1); padding: 12px;'
     old_instruction_end = 'automatically.\n            </div>'
     
-    # যদি পুরনো ইনস্ট্রাকশন থাকে তবে সেটি রিপ্লেস করবে
     import re
     pattern = re.compile(re.escape(old_instruction_start) + '.*?' + re.escape(old_instruction_end), re.DOTALL)
     
     if pattern.search(html):
         html = pattern.sub(bangla_guide, html)
     else:
-        # যদি কোনো কারণে প্যাটার্ন না মেলে, তবে সেকশন টাইটেলের আগে ইনজেক্ট করবে
         html = html.replace('<div class="action-grid">', bangla_guide + '<div class="action-grid">')
         
     return html
 
-# মেইন জেনারেটর রিপ্লেস করা
 __main__.generate_html_code = bangla_guide_injector
 
 async def register(bot):
-    print("🚀 Bangla Download Guide Plugin: Activated!")
+    print("🚀 Bangla Guide with Auto-Voice: Activated!")
 
 print("✅ Bangla Guide Plugin Loaded!")
