@@ -1574,64 +1574,6 @@ async def process_file_upload(client, message, uid, temp_name):
         await status_msg.edit_text(f"❌ Failed: {e}")
     finally:
         convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
-    convo = user_conversations.get(uid)
-    if not convo:
-        return
-        
-    # Track pending uploads so we can block the user from generating post before completion
-    convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
-    
-    status_msg = await message.reply_text(f"🕒 **সারির অপেক্ষায় (Queued)...**\n({temp_name})", quote=True)
-    
-    try:
-        async with upload_semaphore:
-            await status_msg.edit_text(f"⏳ **১/৩: টেলিগ্রাম ডাটাবেসে সেভ হচ্ছে...**\n({temp_name})")
-            copied_msg = await message.copy(chat_id=DB_CHANNEL_ID)
-            bot_username = (await client.get_me()).username
-            tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
-            
-            start_time = time.time()
-            last_update_time =[start_time]
-            file_path = await message.download(progress=down_progress, progress_args=(status_msg, start_time, last_update_time))
-
-            await status_msg.edit_text(f"⏳ **৩/৩: এক্সটার্নাল মাল্টি-সার্ভারে আপলোড হচ্ছে...**\n({temp_name})\n_(যেসকল API Key দেওয়া আছে, সেগুলোতেও প্যারালাল আপলোড হচ্ছে)_")
-            
-            gofile_url, fileditch_url, tmpfiles_url, pixeldrain_url, dood_url, stape_url, filemoon_url, mixdrop_url = await asyncio.gather(
-                upload_to_gofile(file_path),
-                upload_to_fileditch(file_path),
-                upload_to_tmpfiles(file_path),
-                upload_to_pixeldrain(file_path),
-                upload_to_doodstream(file_path),
-                upload_to_streamtape(file_path),
-                upload_to_filemoon(file_path),
-                upload_to_mixdrop(file_path)
-            )
-
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                
-            convo["links"].append({
-                "label": temp_name,
-                "tg_url": tg_link,
-                "gofile_url": gofile_url,
-                "fileditch_url": fileditch_url,
-                "tmpfiles_url": tmpfiles_url,
-                "pixel_url": pixeldrain_url,
-                "dood_url": dood_url,
-                "stape_url": stape_url,
-                "filemoon_url": filemoon_url,
-                "mixdrop_url": mixdrop_url,
-                "is_grouped": True
-            })
-
-            await status_msg.edit_text(f"✅ **আপলোড সম্পন্ন:** {temp_name}")
-            
-    except Exception as e:
-        logger.error(f"Upload Error: {e}")
-        await status_msg.edit_text(f"❌ Failed: {e}")
-    finally:
-        convo["pending_uploads"] = max(0, convo.get("pending_uploads", 0) - 1)
-
 
 @bot.on_message(filters.private & (filters.text | filters.video | filters.document | filters.photo) & ~filters.command(["start", "post", "manual", "edit", "history", "setadlink", "mysettings", "auth", "ban", "stats", "broadcast", "setownerads", "setshare", "setdel", "setapi", "cancel", "repost", "setup", "myconfig", "delsetup"]))
 async def text_handler(client, message):
