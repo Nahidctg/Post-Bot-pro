@@ -1,104 +1,120 @@
 import os
-import aiohttp
-import logging
-import asyncio
 import time
+import math
+import asyncio
+import logging
 import __main__ as main_mod 
-from pyrogram.errors import FileReferenceExpired, FloodWait, RPCError
+from pyrogram.errors import FileReferenceExpired
 
 logger = logging.getLogger(__name__)
 
-# --- মিরর আপলোডার্স ---
+# --- সাইজ ফরম্যাট করার ফাংশন (Bytes to MB/GB) ---
+def get_readable_size(bytes):
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if bytes < 1024.0:
+            return f"{bytes:.2f} {unit}"
+        bytes /= 1024.0
 
-async def upload_to_doodstream(file_path):
-    api_key = await main_mod.get_server_api("doodstream")
-    if not api_key or not os.path.exists(file_path): return None
+# --- সুন্দর প্রসেস বার তৈরির ফাংশন ---
+async def fancy_progress(current, total, status_msg, start_time, last_update):
+    now = time.time()
+    # ৩ সেকেন্ড পরপর আপডেট হবে যাতে টেলিগ্রাম থেকে ফ্লাড ওয়েট না দেয়
+    if now - last_update[0] < 3.5 and current != total:
+        return
+    
+    last_update[0] = now
+    elapsed_time = now - start_time
+    if elapsed_time <= 0: elapsed_time = 1
+    
+    percentage = current * 100 / total
+    speed = current / elapsed_time # bytes per second
+    eta = (total - current) / speed if speed > 0 else 0
+    
+    # ভিজ্যুয়াল বার তৈরি [■■■■■□□□□□]
+    completed_steps = int(percentage / 10)
+    bar = "■" * completed_steps + "□" * (10 - completed_steps)
+    
+    progress_text = (
+        f"📥 **বট সার্ভারে ডাউনলোড হচ্ছে...**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏁 **প্রগ্রেস:** `{bar}` {percentage:.1f}%\n"
+        f"📊 **সাইজ:** `{get_readable_size(current)}` / `{get_readable_size(total)}`\n"
+        f"🚀 **স্পিড:** `{get_readable_size(speed)}/s`\n"
+        f"⏱️ **বাকি সময়:** `{int(eta)}s`"
+    )
+    
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://doodapi.com/api/upload/server?key={api_key}", timeout=20) as resp:
-                data = await resp.json()
-                if not data or 'result' not in data: return None
-                upload_url = data['result']
-            
-            with open(file_path, 'rb') as f:
-                form = aiohttp.FormData()
-                form.add_field('file', f, filename=os.path.basename(file_path))
-                form.add_field('api_key', api_key)
-                async with session.post(upload_url, data=form, timeout=None) as upload_resp:
-                    result = await upload_resp.json()
-                    if result and 'result' in result:
-                        return result['result'][0]['protected_embed']
-    except: return None
+        await status_msg.edit_text(progress_text)
+    except:
+        pass
 
-# --- ডাউনলোড ইঞ্জিন (Forward-to-Self Method) ---
+# --- মিরর আপলোডার ---
+async def mirror_uploads(file_path, status_msg):
+    await status_msg.edit_text("⚡ **ডাউনলোড শেষ! এখন মিরর সার্ভারে আপলোড হচ্ছে...**")
+    tasks = [
+        main_mod.upload_to_doodstream(file_path),
+        main_mod.upload_to_streamtape(file_path),
+        main_mod.upload_to_pixeldrain(file_path),
+        main_mod.upload_to_gofile(file_path)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return results
 
+# --- মেইন ফাংশন (Process File) ---
 async def movie_process_upload(client, message, uid, temp_name):
     convo = main_mod.user_conversations.get(uid)
     if not convo: return
     
     convo["pending_uploads"] = convo.get("pending_uploads", 0) + 1
-    status_msg = await message.reply_text(f"🎬 **প্রসেসিং:** {temp_name}", quote=True)
+    status_msg = await message.reply_text(f"🎬 **ফাইল রিসিভ হয়েছে:**\n`{temp_name}`\n\n⏳ প্রসেসিং শুরু হচ্ছে...", quote=True)
     
     try:
         async with main_mod.upload_semaphore:
-            # ১. ডাটাবেস চ্যানেলে ফাইল কপি (টেলিগ্রাম লিংকের জন্য)
-            copied_msg = await message.copy(chat_id=main_mod.DB_CHANNEL_ID)
-            tg_link = f"https://t.me/{(await client.get_me()).username}?start=get-{copied_msg.id}"
-            
-            await status_msg.edit_text("🔄 **টেলিগ্রাম থেকে ফ্রেশ টোকেন নেওয়া হচ্ছে...**")
-
-            # ২. স্পেশাল ফিক্স: ফাইলটি বটের নিজের ইনবক্সে ফরোয়ার্ড করা (Saved Messages)
-            # এটি করলে টেলিগ্রাম বাধ্য হয় নতুন 'file_reference' দিতে
+            # ১. টোকেন রিফ্রেশ করার জন্য 'Saved Messages'-এ ফরোয়ার্ড
             try:
-                self_forward = await message.forward("me")
-                target_msg = self_forward
+                refreshed_msg = await message.forward("me")
             except:
-                target_msg = message # ফরোয়ার্ড না হলে অরিজিনাল মেসেজ ট্রাই করবে
+                refreshed_msg = message
 
-            # ৩. ডাউনলোড শুরু
+            # ২. ডাউনলোড শুরু
             start_time = time.time()
-            last_update =[start_time]
-            
-            # সরাসরি মেইন বট দিয়ে ডাউনলোড ট্রাই করা (ওয়ার্কার মাঝে মাঝে এরর দেয়)
-            await status_msg.edit_text("⏳ **বট সার্ভারে মুভি ডাউনলোড হচ্ছে...**")
+            last_update = [0] # এটি রিফারেন্স হিসেবে লিস্টে রাখা হয়েছে
             
             file_path = await client.download_media(
-                target_msg, 
-                progress=main_mod.down_progress, 
+                refreshed_msg,
+                progress=fancy_progress,
                 progress_args=(status_msg, start_time, last_update)
             )
 
-            # ফরোয়ার্ড করা মেসেজ ডিলিট করা
-            try: await target_msg.delete()
+            # ফরোয়ার্ড করা মেসেজ ডিলিট
+            try: await refreshed_msg.delete()
             except: pass
 
             if not file_path or not os.path.exists(file_path):
-                raise Exception("টেলিগ্রাম ফাইলটি রিড করতে দিচ্ছে না। দয়া করে কিছুক্ষণ পর আবার ট্রাই করুন।")
+                return await status_msg.edit_text("❌ **ডাউনলোড ফেইল হয়েছে!**")
 
-            await status_msg.edit_text("✅ **ডাউনলোড শেষ! এখন মিরর আপলোড হচ্ছে...**")
-            
-            # ৪. মিরর সাইটে আপলোড (Dood, Streamtape, Gofile)
-            tasks = [
-                upload_to_doodstream(file_path),
-                main_mod.upload_to_streamtape(file_path),
-                main_mod.upload_to_pixeldrain(file_path),
-                main_mod.upload_to_gofile(file_path)
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
+            # ৩. মিরর আপলোড
+            up_results = await mirror_uploads(file_path, status_msg)
             if os.path.exists(file_path): os.remove(file_path)
-            
-            # ডাটা সেভ
+
+            # ৪. অরিজিনাল মেসেজ কপি টু ডিবি চ্যানেল (টেলিগ্রাম লিংকের জন্য)
+            copied_msg = await message.copy(chat_id=main_mod.DB_CHANNEL_ID)
+            bot_username = (await client.get_me()).username
+            tg_link = f"https://t.me/{bot_username}?start=get-{copied_msg.id}"
+
+            # ডাটা সেভ করা
             convo["links"].append({
-                "label": temp_name, "tg_url": tg_link, 
-                "dood_url": results[0] if isinstance(results[0], str) else None,
-                "stape_url": results[1] if isinstance(results[1], str) else None,
-                "pixel_url": results[2] if isinstance(results[2], str) else None,
-                "gofile_url": results[3] if isinstance(results[3], str) else None,
+                "label": temp_name, 
+                "tg_url": tg_link, 
+                "dood_url": up_results[0] if isinstance(up_results[0], str) else None,
+                "stape_url": up_results[1] if isinstance(up_results[1], str) else None,
+                "pixel_url": up_results[2] if isinstance(up_results[2], str) else None,
+                "gofile_url": up_results[3] if isinstance(up_results[3], str) else None,
                 "is_grouped": True
             })
-            await status_msg.edit_text(f"✅ **মুভি আপলোড সফল:** {temp_name}")
             
+            await status_msg.edit_text(f"✅ **মুভি আপলোড সাকসেস!**\n📂 `{temp_name}`")
+
     except Exception as e:
         logger.error(f"Ultimate Error: {e}")
         await status_msg.edit_text(f"❌ **এরর:** {str(e)}")
@@ -107,4 +123,4 @@ async def movie_process_upload(client, message, uid, temp_name):
 
 async def register(bot):
     main_mod.process_file_upload = movie_process_upload
-    print("🛠️ Forward-to-Self Method Active. Autopost Error must be fixed.")
+    print("💎 Fancy Progress Bar & Server Fix Active!")
